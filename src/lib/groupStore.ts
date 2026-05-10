@@ -1,6 +1,7 @@
 import { initializeApp } from "firebase/app";
 import {
   collection,
+  deleteDoc,
   doc,
   enableIndexedDbPersistence,
   getDoc,
@@ -21,6 +22,7 @@ export interface GroupStore {
   getGroup(id: string): Promise<GroupRecord | null>;
   listGroups(): Promise<GroupRecord[]>;
   saveGroup(group: GroupRecord): Promise<void>;
+  clearAllGroups(): Promise<void>;
   updateCourse(
     id: string,
     courseInput: {
@@ -95,6 +97,9 @@ function createLocalStore(): GroupStore {
       groups[group.id] = normalizeGroup(group);
       writeLocalGroups(groups);
     },
+    async clearAllGroups() {
+      localStorage.removeItem(LOCAL_GROUPS_KEY);
+    },
     async updateCourse(id, courseInput) {
       const groups = readLocalGroups();
       const current = groups[id];
@@ -137,6 +142,10 @@ function createFirebaseStore(db: Firestore): GroupStore {
     },
     async saveGroup(group) {
       await setDoc(doc(db, GROUPS_COLLECTION, group.id), normalizeGroup(group));
+    },
+    async clearAllGroups() {
+      const snapshot = await getDocs(collection(db, GROUPS_COLLECTION));
+      await Promise.all(snapshot.docs.map((item) => deleteDoc(item.ref)));
     },
     async updateCourse(id, courseInput) {
       const ref = doc(db, GROUPS_COLLECTION, id);

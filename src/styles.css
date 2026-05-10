@@ -183,6 +183,20 @@ button:focus-visible {
   border: 1px solid #c7d9ee;
 }
 
+.danger-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 8px;
+  color: #ffffff;
+  background: #b42333;
+  border: 1px solid #b42333;
+  font-weight: 800;
+}
+
 .icon-button {
   width: 42px;
   height: 42px;
@@ -391,7 +405,7 @@ button:focus-visible {
 .group-card {
   display: grid;
   gap: 10px;
-  min-height: 214px;
+  min-height: 268px;
   padding: 14px;
   text-align: left;
   color: #172033;
@@ -483,6 +497,66 @@ button:focus-visible {
   font-weight: 800;
 }
 
+.admin-course-list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: admin-course;
+}
+
+.admin-course-list li {
+  counter-increment: admin-course;
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 8px;
+  align-items: start;
+  color: #25324a;
+  font-size: 14px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.admin-course-list li::before {
+  content: counter(admin-course);
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  color: #475569;
+  background: #edf2f7;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.admin-course-list li.active::before {
+  color: #ffffff;
+  background: #f2a51b;
+}
+
+.admin-course-list li.past::before {
+  color: #ffffff;
+  background: #0f7b62;
+}
+
+.admin-course-list.compact {
+  max-height: 132px;
+  overflow: auto;
+  padding-top: 2px;
+  border-top: 1px solid #edf1f6;
+}
+
+.admin-course-list.compact li {
+  font-size: 12px;
+}
+
+.nested-panel {
+  margin-top: 14px;
+  box-shadow: none;
+}
+
 .detail-panel {
   margin-top: 14px;
 }
@@ -526,6 +600,11 @@ button:focus-visible {
   .admin-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .admin-actions .secondary-button,
+  .admin-actions .danger-button {
+    width: 100%;
   }
 
   .tabs {

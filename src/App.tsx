@@ -116,6 +116,21 @@ function getPlaceLabel(place: { name: string; scheduledTime?: string | null }) {
   return place.scheduledTime ? `${place.scheduledTime} ${place.name}` : place.name;
 }
 
+function CoursePreview({ group, compact = false }: { group: GroupRecord; compact?: boolean }) {
+  return (
+    <ol className={classNames("admin-course-list", compact && "compact")}>
+      {group.course.map((place, index) => (
+        <li
+          key={place.placeId}
+          className={classNames(index < group.currentIndex && "past", index === group.currentIndex && "active")}
+        >
+          {getPlaceLabel(place)}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 function App() {
   const isAdmin = window.location.pathname.startsWith("/admin");
 
@@ -458,8 +473,11 @@ function CourseEditor({
   );
   const [saving, setSaving] = useState(false);
   const [courseNotice, setCourseNotice] = useState("");
-  const activePlaceId = existingGroup && existingGroup.status !== "ready"
-    ? existingGroup.course[existingGroup.currentIndex]?.placeId
+  const activePlace = existingGroup && existingGroup.status !== "ready"
+    ? existingGroup.course[existingGroup.currentIndex]
+    : null;
+  const activeEditablePlaceId = activePlace && !activePlace.scheduledTime && !activePlace.requiredCheckpoint
+    ? activePlace.placeId
     : null;
 
   const updatePlace = (
@@ -479,7 +497,7 @@ function CourseEditor({
     event.preventDefault();
     const editablePlaces = [...beforeGatheringPlaces, ...afterGatheringPlaces];
 
-    if (activePlaceId && !editablePlaces.some((place) => place.placeId === activePlaceId && place.name.trim())) {
+    if (activeEditablePlaceId && !editablePlaces.some((place) => place.placeId === activeEditablePlaceId && place.name.trim())) {
       setCourseNotice("현재 진행 중인 장소는 비우거나 삭제할 수 없습니다.");
       return;
     }
@@ -510,8 +528,8 @@ function CourseEditor({
           type="button"
           onClick={() => removePlace(setter, index)}
           aria-label="장소 삭제"
-          disabled={place.placeId === activePlaceId}
-          title={place.placeId === activePlaceId ? "현재 진행 중인 장소는 삭제할 수 없습니다." : undefined}
+          disabled={place.placeId === activeEditablePlaceId}
+          title={place.placeId === activeEditablePlaceId ? "현재 진행 중인 장소는 삭제할 수 없습니다." : undefined}
         >
           <Trash2 size={18} />
         </button>
@@ -674,6 +692,7 @@ function AdminPage() {
   const [selectedClass, setSelectedClass] = useState(1);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [adminNotice, setAdminNotice] = useState("");
 
   const loadGroups = useCallback(async () => {
     if (!authed) {
@@ -739,6 +758,26 @@ function AdminPage() {
     URL.revokeObjectURL(url);
   };
 
+  const resetDatabase = async () => {
+    const confirmed = window.confirm("전체 모둠의 코스와 출발/도착 기록을 모두 초기화할까요?");
+
+    if (!confirmed) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await store.clearAllGroups();
+      setGroups([]);
+      setSelectedGroupId(null);
+      setAdminNotice("데이터베이스를 초기화했습니다.");
+    } catch {
+      setAdminNotice("초기화에 실패했습니다. Firebase 연결을 확인해 주세요.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (!authed) {
     return <AdminLogin onLogin={login} />;
   }
@@ -756,6 +795,7 @@ function AdminPage() {
       </header>
 
       <ModeBanner mode={store.mode} />
+      {adminNotice && <div className="notice">{adminNotice}</div>}
 
       <div className="admin-actions">
         <div className="tabs" role="tablist" aria-label="학급">
@@ -776,6 +816,10 @@ function AdminPage() {
         <button className="secondary-button" type="button" onClick={downloadCsv}>
           <Download size={18} />
           CSV
+        </button>
+        <button className="danger-button" type="button" onClick={resetDatabase}>
+          <Trash2 size={18} />
+          DB 초기화
         </button>
       </div>
 
@@ -809,6 +853,10 @@ function AdminPage() {
             <strong>{getNextPlaceName(selectedGroup) ?? "없음"}</strong>
             <span>마지막 도착</span>
             <strong>{formatTime(selectedGroup.lastArrivalAt)}</strong>
+          </div>
+          <div className="panel nested-panel">
+            <h3>전체 코스</h3>
+            <CoursePreview group={selectedGroup} />
           </div>
           <HistoryList group={selectedGroup} />
         </section>
@@ -895,6 +943,7 @@ function GroupCard({
           <dd>{group ? formatTime(group.lastArrivalAt) : "-"}</dd>
         </div>
       </dl>
+      {group && <CoursePreview group={group} compact />}
       {delay.isDelayed && <small>{delay.labels.join(", ")}</small>}
     </button>
   );
