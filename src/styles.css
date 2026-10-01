@@ -635,3 +635,8 @@ button:focus-visible {
 
 .event-card-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .event-item .event-form { margin-top: 8px; }
+
+.dashboard-topbar { flex-wrap: wrap; }
+.topbar-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-shrink: 0; }
+.event-record-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.event-record-actions .secondary-button, .event-record-actions .danger-button { width: auto; }
