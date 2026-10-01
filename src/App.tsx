@@ -224,7 +224,7 @@ function AdminHome() {
         <button className="event-open" disabled={deleting !== null} onClick={() => window.location.assign(`/admin?event=${encodeURIComponent(item.id)}`)}>
           <div>{item.isExample && <span className="readonly-badge">보기 전용 예시</span>}<h2>{item.name}</h2><p className="muted">{item.classGroupCounts.length}개 반 · {item.classGroupCounts.reduce((sum, count) => sum + count, 0)}개 모둠</p></div><span aria-hidden="true">→</span>
         </button>
-        {!item.isExample && item.id !== "legacy-fieldtrip" && <button className="icon-button danger" disabled={deleting !== null} onClick={() => void deleteEvent(item)} aria-label={`${item.name} 삭제`} title="체험학습 삭제">{deleting === item.id ? <Loader2 className="spin" size={18} /> : <Trash2 size={18} />}</button>}
+        {!item.isExample && <button className="icon-button danger" disabled={deleting !== null} onClick={() => void deleteEvent(item)} aria-label={`${item.name} 삭제`} title="체험학습 삭제">{deleting === item.id ? <Loader2 className="spin" size={18} /> : <Trash2 size={18} />}</button>}
       </div>)}</div>
       {!events.length && !error && <p className="empty-state">아직 체험학습이 없습니다. 새 체험학습을 만들어 시작하세요.</p>}
     </>}

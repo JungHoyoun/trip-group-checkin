@@ -60,7 +60,7 @@ service cloud.firestore {
         && resource.data.get("deletedAt", null) == null
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['classGroupCounts', 'defaultGroupCount'])
         && validEvent(request.resource.data, eventId);
-      allow update: if resource.data.isExample == false && eventId != "legacy-fieldtrip"
+      allow update: if resource.data.isExample == false
         && resource.data.get("deletedAt", null) == null
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deletedAt'])
         && request.resource.data.deletedAt is string;

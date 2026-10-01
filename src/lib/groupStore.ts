@@ -271,7 +271,7 @@ export function getEventStore(): EventStore {
     async deleteEvent(id) {
       if (!validEventId(id)) throw new Error("행사를 찾을 수 없습니다.");
       const markDeleted = (event: LearningEvent) => {
-        if (event.isExample || event.id === "legacy-fieldtrip") throw new Error("보존된 행사는 삭제할 수 없습니다.");
+        if (event.isExample) throw new Error("예시 체험학습은 삭제할 수 없습니다.");
         return { ...event, deletedAt: event.deletedAt ?? new Date().toISOString() };
       };
       if (db) {

@@ -80,7 +80,15 @@ test("deleting a created event removes access while preserving other events and 
     const saved = JSON.parse(data.get("trip-checkin-v5-events"));
     saved[id] = { ...a, id, isExample: id === "example-fieldtrip", deletedAt: undefined };
     data.set("trip-checkin-v5-events", JSON.stringify(saved));
-    await assert.rejects(events.deleteEvent(id), /보존된/);
+    if (id === "example-fieldtrip") await assert.rejects(events.deleteEvent(id), /예시/);
+    else {
+      const legacyStore = getGroupStore(saved[id]);
+      await legacyStore.saveGroup(initial());
+      await events.deleteEvent(id);
+      assert.equal(await events.getEvent(id), null);
+      assert.ok(data.get(`trip-checkin-v5-${id}-groups`));
+      assert.throws(() => legacyStore.getGroup("1-1"), /삭제된/);
+    }
   }
 });
 

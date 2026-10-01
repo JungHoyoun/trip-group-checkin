@@ -55,6 +55,10 @@ test("Firestore rules enforce event boundaries and readonly examples", { skip: !
   assert.equal((await request(`events/${b}`, "PATCH", { ...event(b), deletedAt, classGroupCounts: [1] })).status, 403);
   assert.equal((await request(`events/${a}`)).status, 200);
   assert.equal((await request("events/legacy-fieldtrip", "PATCH", event("legacy-fieldtrip"), true)).status, 200);
-  assert.equal((await request("events/legacy-fieldtrip", "PATCH", { ...event("legacy-fieldtrip"), deletedAt })).status, 403);
+  assert.equal((await request("events/legacy-fieldtrip/groups/1-1", "PATCH", group)).status, 200);
+  assert.equal((await request("events/legacy-fieldtrip", "PATCH", { ...event("legacy-fieldtrip"), deletedAt })).status, 200);
+  assert.equal((await request("events/legacy-fieldtrip/groups/1-1")).status, 403);
+  assert.equal((await request("events/legacy-fieldtrip/groups/1-1", "PATCH", group)).status, 403);
+  assert.equal((await request("events/legacy-fieldtrip/groups/1-1", "GET", undefined, true)).status, 200);
 
 });
