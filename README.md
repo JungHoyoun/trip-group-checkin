@@ -59,3 +59,13 @@ node scripts/migrate-events.mjs --apply --manifest <복원_계획_JSON_절대경
 
 5. 운영 예시의 공개 읽기와 변경 거부, 이전 원본과 기존 행사의 일치를 확인합니다.
 6. 검증된 브랜치를 `main`에 반영해 Vercel을 배포합니다. Firebase 규칙과 복원 검증이 끝나기 전에는 운영 웹을 배포하지 않습니다. Vercel의 기존 Firebase 환경값과 SPA rewrite는 유지합니다.
+
+### 교사용 코드와 모둠 위치
+
+`/admin`은 Firebase Authentication으로 교사용 코드를 검증합니다. 기존 `admin` 문자열과 브라우저 관리자 플래그는 사용하지 않습니다. 내부 교사 계정의 UID를 `locationConfig/access.teacherUids`에 서버 권한으로 등록해야 합니다. 코드는 저장소나 Drive에 보관하지 않습니다. Firebase Authentication의 Email/Password 및 Anonymous 공급자가 필요합니다.
+
+교사 대시보드에서 반·모둠별 위치 공유 링크를 발급합니다. 모둠장은 해당 반·모둠을 선택한 뒤 공유 시작을 누르고 브라우저 위치 권한을 허용합니다. 화면이 보이는 동안 즉시 한 번, 이후 약 3분 간격으로 새 위치를 측정합니다. 화면 잠금과 다른 앱 전환 중의 지속 추적은 지원하지 않습니다. 백그라운드에 쌓인 위치는 재전송하지 않습니다.
+
+위치는 `events/{eventId}/locations/{classNo-groupNo}`에 최신 한 건만 저장합니다. 교사만 읽을 수 있고 학생은 교사가 발급한 추측하기 어려운 모둠 링크를 가진 경우 해당 모둠 위치만 쓸 수 있습니다. 링크 재발급은 기존 링크를 종료합니다. 공유 종료는 위치를 삭제하며, 예시 및 삭제된 행사는 위치 공유를 허용하지 않습니다. 6분 이상 갱신이 없는 위치는 지도와 목록에서 흐리게 표시합니다. GPS 정확도와 측정 시각을 함께 표시합니다.
+
+네이버 Maps Dynamic Map의 웹 Client ID는 `VITE_NAVER_MAP_CLIENT_ID`로 지정합니다. Client Secret은 웹 코드에 넣지 않습니다. 운영 및 로컬 도메인을 네이버 콘솔에 등록해야 합니다. Firebase 기록 및 위치 조회는 실시간 구독을 사용하여 5초 간격 반복 읽기를 없앴습니다.

@@ -673,3 +673,18 @@ button:focus-visible {
 .app-title-link { color: inherit; text-decoration: none; }
 .app-title-link:hover { color: #475569; }
 .app-title-link:focus-visible { outline: 2px solid #64748b; outline-offset: 4px; border-radius: 3px; }
+
+.location-panel { margin: 18px 0; }
+.location-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.location-heading h3 { margin: 0; }
+.teacher-location-map { width: 100%; height: 380px; margin: 12px 0; border-radius: 12px; overflow: hidden; background: #eef2f6; }
+.location-pin { display: block; min-width: 50px; padding: 7px 9px; border-radius: 20px; color: white; background: #2563eb; font: bold 13px sans-serif; text-align: center; box-shadow: 0 2px 6px #0003; }
+.location-pin.stale { background: #64748b; opacity: .55; }
+.location-list { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; }
+.location-list li { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.location-invite { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 16px; }
+.location-invite select { width: auto; }
+.location-link { width: 100%; margin-top: 10px; }
+.location-sharing { margin: 16px 0; }
+@media (max-width: 600px) { .teacher-location-map { height: 320px; } }
+.teacher-auth-bar { display: flex; justify-content: flex-end; max-width: 1200px; margin: 12px auto 0; padding: 0 16px; }
