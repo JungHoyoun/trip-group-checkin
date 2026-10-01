@@ -912,14 +912,13 @@ function EventDashboard({ event }: { event: LearningEvent }) {
       <header className="topbar dashboard-topbar">
         <div>
           <p className="eyebrow">교사</p>
-          <h1>{APP_NAME}</h1>
+          <h1><a className="app-title-link" href="/admin" title="행사 목록으로 돌아가기">{APP_NAME}</a></h1>
         </div>
-        <nav className="topbar-actions" aria-label="일정관리 탐색">
-          <a className="secondary-button" href="/admin">행사 목록</a>
+        <div className="topbar-actions">
           <button className="icon-button" type="button" onClick={loadGroups} aria-label="새로고침">
             {loading ? <Loader2 className="spin" size={18} /> : <RefreshCw size={18} />}
           </button>
-        </nav>
+        </div>
       </header>
 
       <ModeBanner mode={store.mode} />
