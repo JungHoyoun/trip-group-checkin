@@ -30,14 +30,14 @@ export function TeacherGate({ children }: { children: ReactNode }) {
       const permitted = await isLocationTeacher();
       setAllowed(permitted); setCode("");
       if (!permitted) setError("교사 권한을 확인하지 못했습니다. 연결을 확인해 주세요.");
-    } catch { setError("로그인하지 못했습니다. 교사용 코드와 연결을 확인해 주세요."); }
+    } catch { setError("로그인하지 못했습니다. 입력 내용을 확인하고 다시 시도해 주세요."); }
     finally { setBusy(false); }
   };
   if (loading) return <main className="page"><h1>{APP_NAME}</h1><p role="status">교사 권한 확인 중</p></main>;
-  if (!allowed) return <main className="page"><h1>{APP_NAME}</h1><form className="panel" onSubmit={submit}><h2>교사 로그인</h2><label className="field"><span>교사용 코드</span><input type="password" value={code} onChange={e => {
+  if (!allowed) return <main className="page"><h1>{APP_NAME}</h1><form className="panel" onSubmit={submit}><h2>교사 로그인</h2><label className="field"><input type="password" aria-label="비밀번호" value={code} onChange={e => {
     const value = e.target.value;
     if (/^[A-Za-z]*$/.test(value)) { setCode(value); setError(""); }
     else setError("영문 알파벳만 입력해 주세요.");
-  }} autoComplete="current-password" autoCapitalize="none" autoCorrect="off" spellCheck={false} lang="en" pattern="[A-Za-z]+" placeholder="영문 교사용 코드" required /></label>{error && <p role="alert">{error}</p>}<button className="primary-button" type="submit" disabled={busy || !code}>{busy ? "확인 중" : "입장"}</button></form></main>;
+  }} autoComplete="current-password" autoCapitalize="none" autoCorrect="off" spellCheck={false} lang="en" pattern="[A-Za-z]+" placeholder="비밀번호" required /></label>{error && <p role="alert">{error}</p>}<button className="primary-button" type="submit" disabled={busy || !code}>{busy ? "확인 중" : "로그인"}</button></form></main>;
   return <><div className="teacher-auth-bar"><button className="secondary-button" type="button" onClick={() => { const auth = locationAuth(); if (auth) void signOut(auth); }}>교사 로그아웃</button></div>{children}</>;
 }
