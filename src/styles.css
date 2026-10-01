@@ -301,7 +301,19 @@ button:focus-visible {
   background: #0f7b62;
 }
 
+.course-hint {
+  margin: 6px 0 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.course-list.editor {
+  margin-top: 10px;
+}
+
 .course-list.editor li {
+  padding: 6px 0;
   border-bottom: 0;
 }
 

@@ -522,14 +522,13 @@ function CourseEditor({
   const renderEditablePlaces = (
     places: CourseInputPlace[],
     setter: Dispatch<SetStateAction<CourseInputPlace[]>>,
-    placeholder: string,
   ) =>
     places.map((place, index) => (
       <li key={place.placeId}>
         <input
           value={place.name}
           onChange={(event) => updatePlace(setter, index, event.target.value)}
-          placeholder={placeholder}
+          placeholder={index === 0 ? "10:30 광장" : index === 1 ? "11:00 박물관" : "12:00 카페"}
           aria-label={`${index + 1}번째 시간과 장소`}
         />
         <button
@@ -550,6 +549,7 @@ function CourseEditor({
       <div>
         <p className="eyebrow">{session.classNo}반 {session.groupNo}모둠</p>
         <h2>코스 입력</h2>
+        <p className="course-hint">첫 장소는 출발지 · 시간 선택</p>
       </div>
 
       {onCancel && (
@@ -559,11 +559,10 @@ function CourseEditor({
         </button>
       )}
 
-      {courseNotice && <div className="notice">{courseNotice}</div>}
+      {courseNotice && <div className="notice" role="alert">{courseNotice}</div>}
 
-      <p className="muted">첫 번째 장소는 출발지입니다. 예: 10:30 광장 · 10:30 / 광장 · 10:30 - 광장. 시간 없이 장소만 입력해도 됩니다.</p>
       <ol className="course-list editor">
-        {renderEditablePlaces(places, setPlaces, "예: 10:30 광장")}
+        {renderEditablePlaces(places, setPlaces)}
         <li className="control-row">
           <button className="secondary-button add-place-button" type="button" onClick={() => addPlace(setPlaces)}>
             <Plus size={18} />
