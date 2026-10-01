@@ -30,14 +30,48 @@ export function createEmptyCourseInputPlace(): CourseInputPlace {
   };
 }
 
+export function parseCoursePlaceInput(input: string): { name: string; scheduledTime: string | null } {
+  const value = input.trim();
+  const match = value.match(/^([+-]?\d+)\s*[:：]\s*(\d*)(.*)$/u);
+  if (!match) {
+    return { name: value, scheduledTime: null };
+  }
+
+  const [, hourText, minuteText, remainder] = match;
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  if (!/^\d{1,2}$/u.test(hourText) || !/^\d{1,2}$/u.test(minuteText) || hour > 23 || minute > 59) {
+    throw new Error("시간은 00:00~23:59 범위로 입력해 주세요. 예: 10:30 광장");
+  }
+  if (/^[:：]/u.test(remainder.trimStart())) {
+    throw new Error("초 단위 없이 시:분으로 입력해 주세요. 예: 10:30 광장");
+  }
+  const name = remainder.replace(/^[\s\/|–—-]+/u, "").trim();
+  if (!name) {
+    throw new Error("시간 뒤에 장소 이름을 입력해 주세요. 예: 10:30 광장");
+  }
+  if (/^\d+\s*[:：]/u.test(name)) {
+    throw new Error("시간은 한 개만 입력하고 그 뒤에 장소를 적어 주세요. 예: 10:30 광장");
+  }
+  return {
+    name,
+    scheduledTime: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+  };
+}
+
 export function createCourse(places: CourseInputPlace[]): CoursePlace[] {
   return places
-    .map((place) => ({ placeId: place.placeId || createPlaceId(), name: place.name.trim() }))
+    .map((place, index) => {
+      try {
+        return { placeId: place.placeId || createPlaceId(), ...parseCoursePlaceInput(place.name) };
+      } catch (error) {
+        throw new Error(`${index + 1}번째 입력: ${error instanceof Error ? error.message : "입력을 확인해 주세요."}`);
+      }
+    })
     .filter((place) => place.name)
     .map((place, index) => ({
       ...place,
       order: index + 1,
-      scheduledTime: null,
       requiredCheckpoint: null,
     }));
 }
@@ -96,7 +130,10 @@ export function updateGroupCourse(
 }
 
 export function getEditablePlacesFromCourse(course: CoursePlace[]) {
-  return course.map((place) => ({ placeId: place.placeId, name: place.name }));
+  return course.map((place) => ({
+    placeId: place.placeId,
+    name: place.scheduledTime ? `${place.scheduledTime} ${place.name}` : place.name,
+  }));
 }
 
 function deriveProgress(course: CoursePlace[], history: HistoryEntry[]) {
@@ -122,7 +159,7 @@ export function reconcileGroupProgress(group: GroupRecord): GroupRecord {
   const course = group.course.map((place) => ({
     ...place,
     placeId: place.placeId || createPlaceId(),
-    scheduledTime: null,
+    scheduledTime: place.scheduledTime ?? null,
     requiredCheckpoint: null,
   }));
   const history = [...group.history];

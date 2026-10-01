@@ -20,6 +20,7 @@ import {
   createClientActionId,
   createEmptyCourseInputPlace,
   createInitialGroup,
+  createCourse,
   formatTime,
   getCurrentPlaceName,
   getEditablePlacesFromCourse,
@@ -490,7 +491,14 @@ function CourseEditor({
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const editablePlaces = places;
-    if (places.filter((place) => place.name.trim()).length < 2) {
+    let parsedCourse;
+    try {
+      parsedCourse = createCourse(places);
+    } catch (error) {
+      setCourseNotice(error instanceof Error ? error.message : "시간과 장소 입력을 확인해 주세요.");
+      return;
+    }
+    if (parsedCourse.length < 2) {
       setCourseNotice("출발 장소와 도착 장소를 포함해 두 곳 이상 입력해 주세요.");
       return;
     }
@@ -502,8 +510,13 @@ function CourseEditor({
 
     setSaving(true);
     setCourseNotice("");
-    await onSave({ places });
-    setSaving(false);
+    try {
+      await onSave({ places });
+    } catch {
+      setCourseNotice("저장하지 못했습니다. 연결을 확인한 뒤 다시 시도해 주세요.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const renderEditablePlaces = (
@@ -517,6 +530,7 @@ function CourseEditor({
           value={place.name}
           onChange={(event) => updatePlace(setter, index, event.target.value)}
           placeholder={placeholder}
+          aria-label={`${index + 1}번째 시간과 장소`}
         />
         <button
           className="icon-button danger"
@@ -547,9 +561,9 @@ function CourseEditor({
 
       {courseNotice && <div className="notice">{courseNotice}</div>}
 
-      <p className="muted">첫 번째 장소는 출발지입니다. 방문할 장소를 순서대로 입력해 주세요.</p>
+      <p className="muted">첫 번째 장소는 출발지입니다. 예: 10:30 광장 · 10:30 / 광장 · 10:30 - 광장. 시간 없이 장소만 입력해도 됩니다.</p>
       <ol className="course-list editor">
-        {renderEditablePlaces(places, setPlaces, "장소 이름")}
+        {renderEditablePlaces(places, setPlaces, "예: 10:30 광장")}
         <li className="control-row">
           <button className="secondary-button add-place-button" type="button" onClick={() => addPlace(setPlaces)}>
             <Plus size={18} />
