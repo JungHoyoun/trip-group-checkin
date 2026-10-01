@@ -15,7 +15,7 @@ import {
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { CourseInputPlace, GroupAction, GroupRecord, LearningEvent, EventInput } from "./types";
-import { APP_NAME, STATUS_LABELS } from "./lib/constants";
+import { APP_NAME, STATUS_LABELS, HISTORY_LABELS } from "./lib/constants";
 import {
   applyGroupAction,
   createClientActionId,
@@ -451,7 +451,7 @@ function StudentPage({ event }: { event: LearningEvent }) {
     setNotice("임시 저장됨, 연결되면 자동 전송");
   };
 
-  const handleAction = async (type: "depart" | "arrive" | "undo") => {
+  const handleAction = async (type: "start" | "depart" | "arrive" | "finish" | "undo") => {
     if (!group || !session) {
       return;
     }
@@ -514,7 +514,7 @@ function StudentPage({ event }: { event: LearningEvent }) {
       {notice && (!group || editingCourse || loadFailed) && <div className="notice" role="alert">{notice}</div>}
       {loadFailed && <button className="secondary-button" onClick={() => { loadGroup().catch(() => setNotice("불러오지 못했습니다. 연결을 확인해 주세요.")); }}>다시 시도</button>}
       {!session && <StudentStartForm event={event} onSubmit={handleSession} />}
-      {session && <LocationSharing event={event} classNo={session.classNo} groupNo={session.groupNo} />}
+      {session && <LocationSharing key={`${event.id}:${session.classNo}-${session.groupNo}`} event={event} classNo={session.classNo} groupNo={session.groupNo} activityActive={!!group && group.history.length > 0 && group.status !== "completed"} activityFinished={group?.status === "completed"} />}
 
       {session && loading && (
         <div className="loading-box">
@@ -721,7 +721,7 @@ function CourseEditor({
       <div>
         <p className="eyebrow">{session.classNo}반 {session.groupNo}모둠</p>
         <h2>코스 입력</h2>
-        <p className="course-hint">첫 장소는 출발지 · 시간은 생략 가능</p>
+        <p className="course-hint">첫 장소에서 관람 시작 · 시간은 생략 가능</p>
       </div>
 
       {onCancel && (
@@ -761,7 +761,7 @@ function CheckInPanel({
   group: GroupRecord;
   notice: string;
   pendingCount: number;
-  onAction: (type: "depart" | "arrive" | "undo") => void;
+  onAction: (type: "start" | "depart" | "arrive" | "finish" | "undo") => void;
   onEditCourse?: () => void;
 }) {
   const nextAction = getNextAction(group);
@@ -838,7 +838,7 @@ function HistoryList({ group }: { group: GroupRecord }) {
             <li key={entry.clientActionId}>
               <time>{formatTime(entry.at)}</time>
               <span>{entry.placeName}</span>
-              <strong>{entry.type === "depart" ? "출발" : "도착"}</strong>
+              <strong>{HISTORY_LABELS[entry.type]}</strong>
             </li>
           ))}
         </ul>
@@ -946,7 +946,7 @@ function EventDashboard({ event, onRename }: { event: LearningEvent; onRename: (
           `${group.groupNo}`,
           group.leaderName,
           formatTime(entry.at),
-          entry.type === "depart" ? "출발" : "도착",
+          HISTORY_LABELS[entry.type],
           entry.placeName,
           `${entry.placeIndex + 1}`,
         ]),

@@ -149,7 +149,7 @@ function deriveProgress(course: CoursePlace[], history: HistoryEntry[]) {
   const lastArrival = [...history].reverse().find((entry) => entry.type === "arrive");
 
   return {
-    status: last.type === "depart" ? ("moving" as GroupStatus) : ("watching" as GroupStatus),
+    status: last.type === "finish" ? ("completed" as GroupStatus) : last.type === "depart" ? ("moving" as GroupStatus) : ("watching" as GroupStatus),
     currentIndex: Math.min(Math.max(last.placeIndex, 0), Math.max(course.length - 1, 0)),
     lastArrivalAt: lastArrival?.at ?? null,
   };
@@ -193,6 +193,14 @@ export function applyGroupAction(group: GroupRecord, action: GroupAction): Group
   }
 
   let history = [...group.history];
+
+  if (action.type === "start" || action.type === "finish") {
+    if (action.type === "start" && (group.status !== "ready" || group.course.length < 2)) return group;
+    if (action.type === "finish" && (group.status !== "watching" || group.currentIndex !== group.course.length - 1)) return group;
+    const placeIndex = action.type === "start" ? 0 : group.currentIndex;
+    const place = group.course[placeIndex];
+    history.push({ type: action.type, placeId: place.placeId, placeName: place.name, placeIndex, at: action.clientAt, clientActionId: action.clientActionId });
+  }
 
   if (action.type === "undo") {
     history = history.slice(0, -1);
@@ -247,21 +255,23 @@ export function applyGroupAction(group: GroupRecord, action: GroupAction): Group
 }
 
 export function getNextAction(group: GroupRecord): {
-  type: "depart" | "arrive" | null;
+  type: "start" | "depart" | "arrive" | "finish" | null;
   label: string;
   placeName: string | null;
   disabled: boolean;
 } {
   if (group.status === "ready") {
-    const firstDestination = group.course[1] ?? group.course[0];
+    const firstDestination = group.course[0];
 
     return {
-      type: "depart",
-      label: "출발하기",
+      type: "start",
+      label: "관람 시작",
       placeName: firstDestination?.name ?? null,
       disabled: group.course.length < 2,
     };
   }
+
+  if (group.status === "completed") return { type: null, label: "모든 코스 완료", placeName: null, disabled: true };
 
   if (group.status === "moving") {
     return {
@@ -276,10 +286,10 @@ export function getNextAction(group: GroupRecord): {
 
   if (!nextPlace) {
     return {
-      type: null,
-      label: "모든 코스 완료",
-      placeName: null,
-      disabled: true,
+      type: "finish",
+      label: "관람 종료",
+      placeName: group.course[group.currentIndex]?.name ?? null,
+      disabled: false,
     };
   }
 

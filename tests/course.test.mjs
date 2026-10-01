@@ -27,7 +27,7 @@ test("only user-entered places are included, including formerly reserved names",
 
 test("custom course supports departure, arrival, undo and completion", () => {
   let group = initial();
-  assert.equal(logic.getNextAction(group).placeName, "공연장");
+  assert.equal(logic.getNextAction(group).placeName, "출발지");
   group = act(group, "depart");
   assert.equal(group.currentIndex, 1);
   assert.equal(group.status, "moving");
@@ -39,8 +39,30 @@ test("custom course supports departure, arrival, undo and completion", () => {
   group = act(group, "depart");
   group = act(group, "arrive");
   assert.equal(group.currentIndex, 2);
+  assert.equal(logic.getNextAction(group).label, "관람 종료");
+  group = act(group, "finish");
+  assert.equal(group.status, "completed");
   assert.equal(logic.getNextAction(group).label, "모든 코스 완료");
   assert.equal(logic.getNextAction(group).disabled, true);
+});
+
+test("start and finish follow the itinerary, survive reload and support undo", () => {
+  let group = initial();
+  assert.equal(act(group, "finish"), group);
+  group = act(group, "start");
+  assert.equal(group.currentIndex, 0);
+  assert.equal(group.status, "watching");
+  assert.equal(group.history[0].type, "start");
+  assert.equal(act(group, "start"), group);
+  assert.equal(act(group, "finish"), group);
+  group = act(act(act(act(group, "depart"), "arrive"), "depart"), "arrive");
+  group = act(group, "finish");
+  assert.equal(logic.reconcileGroupProgress(JSON.parse(JSON.stringify(group))).status, "completed");
+  assert.equal(act(group, "finish"), group);
+  assert.equal(act(group, "depart"), group);
+  group = act(group, "undo");
+  assert.equal(group.status, "watching");
+  assert.equal(logic.getNextAction(group).type, "finish");
 });
 
 test("inserting a place keeps current progress attached to its place ID", () => {

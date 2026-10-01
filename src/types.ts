@@ -1,8 +1,8 @@
 export type RequiredCheckpoint = "asia_culture_center" | "concert_hall";
 
-export type GroupStatus = "ready" | "moving" | "watching";
+export type GroupStatus = "ready" | "moving" | "watching" | "completed";
 
-export type HistoryType = "depart" | "arrive";
+export type HistoryType = "start" | "depart" | "arrive" | "finish";
 
 export type ActionType = HistoryType | "undo";
 
