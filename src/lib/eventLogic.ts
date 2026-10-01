@@ -11,7 +11,8 @@ export function validateEventInput(input: EventInput): EventInput {
       input.classGroupCounts.some(count => !Number.isInteger(count) || count < 1 || count > 30)) {
     throw new Error("반 수와 모둠 수는 1~30의 정수로 입력해 주세요.");
   }
-  return { name, classGroupCounts: [...input.classGroupCounts] };
+  if (input.defaultGroupCount !== undefined && (!Number.isInteger(input.defaultGroupCount) || input.defaultGroupCount < 1 || input.defaultGroupCount > 30)) throw new Error("기본 모둠 수는 1~30의 정수로 입력해 주세요.");
+  return { name, classGroupCounts: [...input.classGroupCounts], ...(input.defaultGroupCount === undefined ? {} : { defaultGroupCount: input.defaultGroupCount }) };
 }
 
 export function validGroup(event: LearningEvent, classNo: number, groupNo: number) {

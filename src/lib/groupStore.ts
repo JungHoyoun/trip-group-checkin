@@ -207,6 +207,7 @@ export interface EventStore {
   getEvent(id: string): Promise<LearningEvent | null>;
   createEvent(input: EventInput): Promise<LearningEvent>;
   deleteEvent(id: string): Promise<void>;
+  updateEvent(id: string, input: EventInput): Promise<LearningEvent>;
 }
 
 function readLocalEvents(): Record<string, LearningEvent> {
@@ -227,6 +228,45 @@ export function getEventStore(): EventStore {
       if (!db) { const event = readLocalEvents()[id]; return event && !event.deletedAt ? event : null; }
       const snapshot = await getDoc(doc(db, "events", id));
       return snapshot.exists() && !snapshot.data().deletedAt ? { ...snapshot.data(), id: snapshot.id } as LearningEvent : null;
+    },
+    async updateEvent(id, input) {
+      if (!validEventId(id)) throw new Error("행사를 찾을 수 없습니다.");
+      const settings = validateEventInput(input);
+      const prepare = (current: LearningEvent) => {
+        if (current.deletedAt) throw new Error("삭제된 행사입니다.");
+        if (current.isExample) throw new Error("예시 체험학습은 보기 전용입니다.");
+        if (settings.name !== current.name) throw new Error("행사 이름은 변경할 수 없습니다.");
+        return { ...current, ...settings };
+      };
+      const excludedIds = (current: LearningEvent) => current.classGroupCounts.flatMap((count, index) =>
+        Array.from({ length: count }, (_, group) => `${index + 1}-${group + 1}`)
+          .filter((_, group) => !validGroup({ ...current, ...settings }, index + 1, group + 1)));
+      const protectedRecord = (groupId: string) => {
+        const [classNo, groupNo] = groupId.split("-");
+        throw new Error(`${classNo}반 ${groupNo}모둠에 기록이 있어 줄일 수 없습니다. 해당 모둠을 포함해 주세요.`);
+      };
+      if (db) return runTransaction(db, async transaction => {
+        const ref = doc(db, "events", id);
+        const snapshot = await transaction.get(ref);
+        if (!snapshot.exists()) throw new Error("행사를 찾을 수 없습니다.");
+        const current = { ...snapshot.data(), id } as LearningEvent;
+        const next = prepare(current);
+        // Read removed slots in this transaction to protect concurrent student registrations.
+        for (const groupId of excludedIds(current)) {
+          const group = await transaction.get(doc(db, "events", id, "groups", groupId));
+          if (group.exists()) protectedRecord(groupId);
+        }
+        transaction.update(ref, settings as Partial<LearningEvent>);
+        return next;
+      });
+      const events = readLocalEvents();
+      if (!events[id]) throw new Error("행사를 찾을 수 없습니다.");
+      const next = prepare(events[id]);
+      const groups = readLocalGroups(eventStorageKey(id, "groups"));
+      for (const groupId of excludedIds(events[id])) if (groups[groupId]) protectedRecord(groupId);
+      events[id] = next;
+      localStorage.setItem(LOCAL_EVENTS_KEY, JSON.stringify(events));
+      return next;
     },
     async deleteEvent(id) {
       if (!validEventId(id)) throw new Error("행사를 찾을 수 없습니다.");
@@ -263,7 +303,7 @@ export function getGroupStore(event: LearningEvent): GroupStore {
   const store = db ? createFirebaseStore(db, event) : createLocalStore(event);
   const checkId = (id: string) => {
     const [classNo, groupNo] = id.split("-").map(Number);
-    if (id !== `${classNo}-${groupNo}` || !validGroup(event, classNo, groupNo)) throw new Error("행사에 없는 반 또는 모둠입니다.");
+    if (id !== `${classNo}-${groupNo}` || !validGroup(!db ? readLocalEvents()[event.id] ?? event : event, classNo, groupNo)) throw new Error("행사에 없는 반 또는 모둠입니다.");
   };
   const checkActive = () => { if (event.deletedAt || (!db && readLocalEvents()[event.id]?.deletedAt)) throw new Error("삭제된 행사입니다."); };
   const checkWrite = () => { checkActive(); if (event.isExample) throw new Error("예시 체험학습은 보기 전용입니다."); };

@@ -170,7 +170,10 @@ function StudentEntry() {
     store.getEvent(EVENT_ID).then(value => { if (!cancelled) setEvent(value); })
       .catch(() => { if (!cancelled) setError("행사를 불러오지 못했습니다. 연결을 확인해 주세요."); })
       .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+    const interval = window.setInterval(() => {
+      store.getEvent(EVENT_ID).then(value => { if (!cancelled) setEvent(old => JSON.stringify(old) === JSON.stringify(value) ? old : value); }).catch(() => {});
+    }, 5000);
+    return () => { cancelled = true; window.clearInterval(interval); };
   }, [store, attempt]);
   if (event && !event.isExample && !loading && !error) return <StudentPage event={event} />;
   return <main className="page"><h1>{APP_NAME}</h1><div className="panel empty-state">
@@ -206,7 +209,10 @@ function AdminHome() {
     if (value.trim() === "admin") { localStorage.setItem(ADMIN_KEY, "true"); setAuthed(true); }
   }} />;
   const event = events.find(item => item.id === EVENT_ID);
-  if (EVENT_ID && event && !loading && !error) return <EventDashboard event={event} />;
+  if (EVENT_ID && event && !loading && !error) return <EventDashboard event={event} onUpdate={async input => {
+    const updated = await store.updateEvent(event.id, input);
+    setEvents(old => old.map(item => item.id === updated.id ? updated : item));
+  }} />;
   return <main className="page admin-page">
     <header className="topbar"><div><p className="eyebrow">교사</p><h1>{APP_NAME}</h1></div></header>
     <ModeBanner mode={store.mode} />
@@ -225,24 +231,25 @@ function AdminHome() {
   </main>;
 }
 
-function CreateEventForm({ onCreate }: { onCreate: (input: EventInput) => Promise<void> }) {
-  const [name, setName] = useState("");
-  const [classCount, setClassCount] = useState("5");
-  const [baseCount, setBaseCount] = useState("4");
-  const [counts, setCounts] = useState<string[]>(Array(5).fill("4"));
+function CreateEventForm({ onCreate, initialEvent, onCancel }: { onCreate: (input: EventInput) => Promise<void>; initialEvent?: LearningEvent; onCancel?: () => void }) {
+  const [name, setName] = useState(initialEvent?.name ?? "");
+  const [classCount, setClassCount] = useState(String(initialEvent?.classGroupCounts.length ?? 5));
+  const [baseCount, setBaseCount] = useState(String(initialEvent?.defaultGroupCount ?? initialEvent?.classGroupCounts[0] ?? 4));
+  const [counts, setCounts] = useState<string[]>(initialEvent?.classGroupCounts.map(String) ?? Array(5).fill("4"));
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const submit = async (formEvent: FormEvent) => {
     formEvent.preventDefault(); setError("");
     try {
       if (!Number.isInteger(Number(classCount)) || Number(classCount) !== counts.length || !Number.isInteger(Number(baseCount)) || Number(baseCount) < 1 || Number(baseCount) > 30) throw new Error("반 수와 모둠 수는 1~30의 정수로 입력해 주세요.");
-      const input = validateEventInput({ name, classGroupCounts: counts.map(Number) });
+      const input = validateEventInput({ name, classGroupCounts: counts.map(Number), defaultGroupCount: Number(baseCount) });
       setSaving(true); await onCreate(input);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "생성하지 못했습니다. 다시 시도해 주세요."); }
     finally { setSaving(false); }
   };
   return <form className="panel event-form" onSubmit={submit}>
-    <label>행사 이름<input value={name} onChange={e => setName(e.target.value)} placeholder="예: 가을 체험학습" maxLength={80} required disabled={saving} /></label>
+    {!initialEvent && <label>행사 이름<input value={name} onChange={e => setName(e.target.value)} placeholder="예: 가을 체험학습" maxLength={80} required disabled={saving} /></label>}
+    {initialEvent && <h3>반·모둠 설정</h3>}
     <div className="field-row">
       <label>반 수<input type="number" min={1} max={30} step={1} value={classCount} required disabled={saving} onChange={e => {
         const value = e.target.value; setClassCount(value); const count = Number(value);
@@ -254,7 +261,8 @@ function CreateEventForm({ onCreate }: { onCreate: (input: EventInput) => Promis
     </div>
     <fieldset className="class-counts" disabled={saving}><legend>반별 모둠 수</legend>{counts.map((count, index) => <label key={index}>{index + 1}반<input type="number" min={1} max={30} step={1} value={count} required onChange={e => setCounts(old => old.map((value, i) => i === index ? e.target.value : value))} /></label>)}</fieldset>
     {error && <div className="notice" role="alert">{error}</div>}
-    <button className="primary-button" type="submit" disabled={saving}>{saving ? "생성 중" : "체험학습 만들기"}</button>
+    <div className="event-toolbar"><button className="primary-button" type="submit" disabled={saving}>{saving ? "저장 중" : initialEvent ? "설정 저장" : "체험학습 만들기"}</button>
+    {onCancel && <button className="secondary-button" type="button" disabled={saving} onClick={onCancel}>취소</button>}</div>
   </form>;
 }
 
@@ -271,6 +279,12 @@ function StudentPage({ event }: { event: LearningEvent }) {
   const [pendingCount, setPendingCount] = useState(() => (session ? readPendingActions(getGroupId(session.classNo, session.groupNo)).length : 0));
   const [notice, setNotice] = useState("");
 
+  useEffect(() => {
+    if (session && !validGroup(event, session.classNo, session.groupNo)) {
+      localStorage.removeItem(eventStorageKey(event.id, "student-session"));
+      setSession(null); setGroup(null); setNotice("반·모둠 설정이 변경되었습니다. 다시 선택해 주세요.");
+    }
+  }, [event, session]);
   const groupId = session ? getGroupId(session.classNo, session.groupNo) : null;
 
   const loadGroup = useCallback(async () => {
@@ -468,6 +482,7 @@ function StudentPage({ event }: { event: LearningEvent }) {
 
       <ModeBanner mode={store.mode} />
       <h2 className="event-title">{event.name}</h2>
+
       {notice && (!group || editingCourse || loadFailed) && <div className="notice" role="alert">{notice}</div>}
       {loadFailed && <button className="secondary-button" onClick={() => { loadGroup().catch(() => setNotice("불러오지 못했습니다. 연결을 확인해 주세요.")); }}>다시 시도</button>}
       {!session && <StudentStartForm event={event} onSubmit={handleSession} />}
@@ -516,6 +531,9 @@ function StudentStartForm({ event, onSubmit }: { event: LearningEvent; onSubmit:
   const [classNo, setClassNo] = useState(validGroup(event, lastStudent.classNo, lastStudent.groupNo) ? lastStudent.classNo : 1);
   const [groupNo, setGroupNo] = useState(validGroup(event, lastStudent.classNo, lastStudent.groupNo) ? lastStudent.groupNo : 1);
   const [leaderName, setLeaderName] = useState(lastStudent.leaderName);
+  useEffect(() => {
+    if (!validGroup(event, classNo, groupNo)) { setClassNo(1); setGroupNo(1); }
+  }, [event, classNo, groupNo]);
 
   const submit = (formEvent: FormEvent) => {
     formEvent.preventDefault();
@@ -800,7 +818,9 @@ function HistoryList({ group }: { group: GroupRecord }) {
   );
 }
 
-function EventDashboard({ event }: { event: LearningEvent }) {
+function EventDashboard({ event, onUpdate }: { event: LearningEvent; onUpdate: (input: EventInput) => Promise<void> }) {
+  const [editingSettings, setEditingSettings] = useState(false);
+  useEffect(() => { setSelectedClass(old => Math.min(old, event.classGroupCounts.length)); }, [event.classGroupCounts.length]);
   const store = useMemo(() => getGroupStore(event), [event]);
   const [groups, setGroups] = useState<GroupRecord[]>([]);
   const [selectedClass, setSelectedClass] = useState(1);
@@ -900,6 +920,10 @@ function EventDashboard({ event }: { event: LearningEvent }) {
         }}>학생용 링크 복사</button>}
       </div>
       <h2 className="event-title">{event.name}</h2>
+      {!event.isExample && !editingSettings && <button className="secondary-button" onClick={() => setEditingSettings(true)}>반·모둠 설정 수정</button>}
+      {editingSettings && <CreateEventForm initialEvent={event} onCancel={() => setEditingSettings(false)} onCreate={async input => {
+        await onUpdate(input); setEditingSettings(false); setSelectedGroupId(null); setAdminNotice("반·모둠 설정을 저장했습니다.");
+      }} />}
       {event.isExample && <span className="readonly-badge">보기 전용 예시</span>}
       {adminNotice && <div className="notice" role="status">{adminNotice}</div>}
 

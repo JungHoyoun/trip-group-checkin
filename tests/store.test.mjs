@@ -83,3 +83,28 @@ test("deleting a created event removes access while preserving other events and 
     await assert.rejects(events.deleteEvent(id), /보존된/);
   }
 });
+
+
+test("editing configuration preserves records, defaults and event identity", async () => {
+  const events = getEventStore();
+  const event = await events.createEvent({ name: "설정 수정", classGroupCounts: [2, 3], defaultGroupCount: 3 });
+  const stale = getGroupStore(event);
+  await stale.saveGroup(initial());
+  const updated = await events.updateEvent(event.id, { name: event.name, classGroupCounts: [1, 4, 2], defaultGroupCount: 2 });
+  assert.equal(updated.id, event.id);
+  assert.equal(updated.createdAt, event.createdAt);
+  assert.equal((await events.getEvent(event.id)).defaultGroupCount, 2);
+  assert.equal((await getGroupStore(updated).getGroup("1-1")).leaderName, "테스트");
+  assert.throws(() => stale.getGroup("1-2"), /행사에 없는/);
+  const secondClass = { ...initial(), id: "2-4", classNo: 2, groupNo: 4 };
+  await getGroupStore(updated).saveGroup(secondClass);
+  for (const counts of [[1], [1, 3]]) {
+    await assert.rejects(events.updateEvent(event.id, { name: event.name, classGroupCounts: counts }), /2반 4모둠/);
+  }
+  assert.deepEqual((await events.getEvent(event.id)).classGroupCounts, [1, 4, 2]);
+  await assert.rejects(events.updateEvent(event.id, { name: event.name, classGroupCounts: [0] }));
+  await assert.rejects(events.updateEvent(event.id, { name: event.name, classGroupCounts: [1], defaultGroupCount: 31 }));
+  await assert.rejects(events.updateEvent("example-fieldtrip", { name: "예시", classGroupCounts: [1] }), /보기 전용/);
+  await events.deleteEvent(event.id);
+  await assert.rejects(events.updateEvent(event.id, { name: event.name, classGroupCounts: [1] }), /삭제된/);
+});

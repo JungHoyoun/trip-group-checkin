@@ -38,12 +38,21 @@ test("Firestore rules enforce event boundaries and readonly examples", { skip: !
   assert.equal((await request(`groups/${prefix}`, "PATCH", group, true)).status, 200);
   assert.equal((await request(`groups/${prefix}`, "PATCH", group)).status, 403);
   assert.equal((await request(`groups/${prefix}`, "DELETE")).status, 403);
+  const edited = { ...event(a), classGroupCounts: [3, 1, 2], defaultGroupCount: 2 };
+  assert.equal((await request(`events/${a}`, "PATCH", edited)).status, 200);
+  assert.equal((await request(`events/${a}/groups/3-1`, "PATCH", { ...group, id: "3-1", classNo: 3 })).status, 200);
+  assert.equal((await request(`events/${a}/groups/2-2`, "PATCH", { ...group, id: "2-2", classNo: 2, groupNo: 2 })).status, 403);
+  for (const patch of [{ ...edited, defaultGroupCount: 0 }, { ...edited, classGroupCounts: [31] }]) {
+    assert.equal((await request(`events/${a}`, "PATCH", patch)).status, 403);
+  }
+  assert.equal((await request(`events/${demo}`, "PATCH", { ...event(demo), isExample: true, classGroupCounts: [1] })).status, 403);
   const deletedAt = "2026-10-02T00:00:00Z";
   assert.equal((await request(`events/${demo}`, "PATCH", { ...event(demo), isExample: true, deletedAt })).status, 403);
   assert.equal((await request(`events/${b}`, "PATCH", { ...event(b), deletedAt })).status, 200);
   assert.equal((await request(`events/${b}/groups/1-1`)).status, 403);
   assert.equal((await request(`events/${b}/groups/1-1`, "PATCH", group)).status, 403);
   assert.equal((await request(`events/${b}`, "PATCH", event(b))).status, 403);
+  assert.equal((await request(`events/${b}`, "PATCH", { ...event(b), deletedAt, classGroupCounts: [1] })).status, 403);
   assert.equal((await request(`events/${a}`)).status, 200);
   assert.equal((await request("events/legacy-fieldtrip", "PATCH", event("legacy-fieldtrip"), true)).status, 200);
   assert.equal((await request("events/legacy-fieldtrip", "PATCH", { ...event("legacy-fieldtrip"), deletedAt })).status, 403);

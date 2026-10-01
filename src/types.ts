@@ -57,6 +57,7 @@ export interface LearningEvent {
   id: string;
   name: string;
   classGroupCounts: number[];
+  defaultGroupCount?: number;
   createdAt: string;
   isExample: boolean;
   deletedAt?: string;
@@ -65,4 +66,5 @@ export interface LearningEvent {
 export interface EventInput {
   name: string;
   classGroupCounts: number[];
+  defaultGroupCount?: number;
 }

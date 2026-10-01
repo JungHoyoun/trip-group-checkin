@@ -6,9 +6,10 @@ service cloud.firestore {
     }
     function validEvent(data, eventId) {
       let counts = data.classGroupCounts;
-      return data.keys().hasOnly(['id', 'name', 'classGroupCounts', 'createdAt', 'isExample'])
+      return data.keys().hasOnly(['id', 'name', 'classGroupCounts', 'createdAt', 'isExample', 'defaultGroupCount'])
         && eventId.matches("^[a-zA-Z0-9_-]{1,128}$") && data.id == eventId && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
         && data.createdAt is string && data.isExample == false
+        && validCount([data.get("defaultGroupCount", 4)], 0)
         && counts is list && counts.size() >= 1 && counts.size() <= 30
         && validCount(counts, 0)
         && validCount(counts, 1)
@@ -55,6 +56,10 @@ service cloud.firestore {
     match /events/{eventId} {
       allow read: if true;
       allow create: if validEvent(request.resource.data, eventId);
+      allow update: if resource.data.isExample == false
+        && resource.data.get("deletedAt", null) == null
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['classGroupCounts', 'defaultGroupCount'])
+        && validEvent(request.resource.data, eventId);
       allow update: if resource.data.isExample == false && eventId != "legacy-fieldtrip"
         && resource.data.get("deletedAt", null) == null
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deletedAt'])
