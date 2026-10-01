@@ -116,3 +116,22 @@ test("editing configuration preserves records, defaults and event identity", asy
   await events.deleteEvent(event.id);
   await assert.rejects(events.updateEvent(event.id, { name: event.name, classGroupCounts: [1] }), /삭제된/);
 });
+
+
+test("renaming preserves event identity, settings, records and other events", async () => {
+  const store = getEventStore();
+  const original = await store.createEvent({ name: "이전 이름", classGroupCounts: [2, 4], defaultGroupCount: 3 });
+  const other = await store.createEvent({ name: "다른 행사", classGroupCounts: [1] });
+  const groups = getGroupStore(original);
+  await groups.saveGroup(initial());
+  const renamed = await store.renameEvent(original.id, " 새 이름 ");
+  assert.deepEqual(renamed, { ...original, name: "새 이름" });
+  assert.equal((await store.getEvent(original.id)).name, "새 이름");
+  assert.equal((await store.getEvent(other.id)).name, "다른 행사");
+  assert.equal((await groups.getGroup("1-1")).leaderName, "테스트");
+  for (const name of [" ", "x".repeat(81)]) await assert.rejects(store.renameEvent(original.id, name));
+  await assert.rejects(store.renameEvent("missing", "이름"));
+  await assert.rejects(store.renameEvent("example-fieldtrip", "이름"), /보기 전용/);
+  await store.deleteEvent(original.id);
+  await assert.rejects(store.renameEvent(original.id, "이름"), /삭제된/);
+});

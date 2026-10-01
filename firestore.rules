@@ -53,18 +53,79 @@ service cloud.firestore {
         && data.groupNo >= 1 && data.groupNo <= counts[data.classNo - 1]
         && groupId == string(data.classNo) + '-' + string(data.groupNo) && data.id == groupId;
     }
+    function locationTeacher() {
+      return request.auth != null
+        && request.auth.uid in get(/databases/$(database)/documents/locationConfig/access).data.teacherUids;
+    }
+    match /locationConfig/access {
+      allow get: if locationTeacher();
+      allow list, write: if false;
+    }
     match /events/{eventId} {
       allow read: if true;
-      allow create: if validEvent(request.resource.data, eventId);
-      allow update: if resource.data.isExample == false
+      allow create: if locationTeacher() && validEvent(request.resource.data, eventId);
+      allow update: if locationTeacher() && resource.data.isExample == false
         && resource.data.get("deletedAt", null) == null
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['classGroupCounts', 'defaultGroupCount'])
         && validEvent(request.resource.data, eventId);
-      allow update: if resource.data.isExample == false
+      allow update: if locationTeacher() && resource.data.isExample == false
         && resource.data.get("deletedAt", null) == null
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deletedAt'])
         && request.resource.data.deletedAt is string;
       allow delete: if false;
+      match /locationInvites/{inviteId} {
+        allow get: if request.auth != null && writableEvent(eventId);
+        allow list: if false;
+        allow create, update: if locationTeacher() && writableEvent(eventId)
+          && inviteId.matches('^[a-f0-9]{32}
+        allow read: if exists(/databases/$(database)/documents/events/$(eventId))
+          && get(/databases/$(database)/documents/events/$(eventId)).data.get("deletedAt", null) == null;
+        allow create, update: if writableEvent(eventId) && validGroup(eventId, groupId, request.resource.data);
+        allow delete: if locationTeacher() && writableEvent(eventId);
+      }
+    }
+    // Retain the legacy source for review, but stop obsolete clients changing it after cutover.
+    match /groups/{groupId} {
+      allow read: if true;
+      allow write: if false;
+    }
+  }
+}
+)
+          && request.resource.data.keys().hasOnly(['classNo', 'groupNo', 'active'])
+          && request.resource.data.active is bool
+          && validGroup(eventId, string(request.resource.data.classNo) + '-' + string(request.resource.data.groupNo), {
+            'id': string(request.resource.data.classNo) + '-' + string(request.resource.data.groupNo),
+            'classNo': request.resource.data.classNo, 'groupNo': request.resource.data.groupNo
+          });
+        allow delete: if locationTeacher();
+      }
+      match /locationInviteIndex/{groupId} {
+        allow read, write: if locationTeacher() && writableEvent(eventId);
+      }
+      match /locations/{groupId} {
+        function validLocation() {
+          let data = request.resource.data;
+          let invite = get(/databases/$(database)/documents/events/$(eventId)/locationInvites/$(data.inviteId)).data;
+          return request.auth != null && writableEvent(eventId)
+            && data.keys().hasOnly(['classNo', 'groupNo', 'latitude', 'longitude', 'accuracy', 'measuredAt', 'receivedAt', 'publisherUid', 'inviteId'])
+            && data.inviteId is string && invite.active == true
+            && invite.classNo == data.classNo && invite.groupNo == data.groupNo
+            && validGroup(eventId, groupId, {'id': groupId, 'classNo': data.classNo, 'groupNo': data.groupNo})
+            && data.publisherUid == request.auth.uid
+            && data.latitude is number && data.latitude >= -90 && data.latitude <= 90
+            && data.longitude is number && data.longitude >= -180 && data.longitude <= 180
+            && data.accuracy is number && data.accuracy >= 0
+            && data.receivedAt == request.time
+            && data.measuredAt is number && data.measuredAt >= request.time.toMillis() - 300000
+            && data.measuredAt <= request.time.toMillis() + 60000;
+        }
+        allow read: if locationTeacher() && writableEvent(eventId);
+        allow create: if validLocation();
+        allow update: if validLocation() && resource.data.publisherUid == request.auth.uid
+          && request.time >= resource.data.receivedAt + duration.value(180, 's');
+        allow delete: if locationTeacher() || (request.auth != null && resource.data.publisherUid == request.auth.uid);
+      }
       match /groups/{groupId} {
         allow read: if exists(/databases/$(database)/documents/events/$(eventId))
           && get(/databases/$(database)/documents/events/$(eventId)).data.get("deletedAt", null) == null;

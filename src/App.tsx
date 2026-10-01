@@ -29,8 +29,12 @@ import {
   getNextAction,
   getNextPlaceName,
 } from "./lib/groupLogic";
-import { getEventStore, getGroupStore } from "./lib/groupStore";
+import { getEventStore, getGroupStore, watchEvent, watchGroup, watchGroups } from "./lib/groupStore";
 import { eventStorageKey, numbers, validGroup, validateEventInput } from "./lib/eventLogic";
+
+import { LocationSharing } from "./components/LocationSharing";
+import { TeacherLocationMap } from "./components/TeacherLocationMap";
+import { TeacherGate } from "./components/TeacherGate";
 
 interface StudentSession {
   eventId: string;
@@ -42,7 +46,6 @@ interface StudentSession {
 const EVENT_ID = new URLSearchParams(window.location.search).get("event");
 const SESSION_KEY = eventStorageKey(EVENT_ID ?? "none", "student-session");
 const LAST_STUDENT_KEY = eventStorageKey(EVENT_ID ?? "none", "last-student");
-const ADMIN_KEY = "trip-checkin-v4-admin-ok";
 
 function pendingKey(groupId: string) {
   return eventStorageKey(EVENT_ID ?? "none", `pending-${groupId}`);
@@ -141,7 +144,7 @@ function App() {
 
   return (
     <div className="app-shell">
-      {isAdmin ? <AdminHome /> : <StudentEntry />}
+      {isAdmin ? <TeacherGate><AdminHome /></TeacherGate> : <StudentEntry />}
     </div>
   );
 }
@@ -171,10 +174,11 @@ function StudentEntry() {
     store.getEvent(EVENT_ID).then(value => { if (!cancelled) setEvent(value); })
       .catch(() => { if (!cancelled) setError("행사를 불러오지 못했습니다. 연결을 확인해 주세요."); })
       .finally(() => { if (!cancelled) setLoading(false); });
-    const interval = window.setInterval(() => {
+    const unsubscribe = watchEvent(EVENT_ID, value => { if (!cancelled) setEvent(old => JSON.stringify(old) === JSON.stringify(value) ? old : value); }, () => { if (!cancelled) setError("행사를 불러오지 못했습니다. 연결을 확인해 주세요."); });
+    const interval = unsubscribe ? null : window.setInterval(() => {
       store.getEvent(EVENT_ID).then(value => { if (!cancelled) setEvent(old => JSON.stringify(old) === JSON.stringify(value) ? old : value); }).catch(() => {});
     }, 5000);
-    return () => { cancelled = true; window.clearInterval(interval); };
+    return () => { cancelled = true; unsubscribe?.(); if (interval) window.clearInterval(interval); };
   }, [store, attempt]);
   if (event && !event.isExample && !loading && !error) return <StudentPage event={event} />;
   return <main className="page"><h1>{APP_NAME}</h1><div className="panel empty-state">
@@ -186,7 +190,6 @@ function StudentEntry() {
 
 function AdminHome() {
   const store = useMemo(() => getEventStore(), []);
-  const [authed, setAuthed] = useState(() => localStorage.getItem(ADMIN_KEY) === "true");
   const [events, setEvents] = useState<LearningEvent[]>([]);
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -200,7 +203,7 @@ function AdminHome() {
     catch { setError("체험학습을 불러오지 못했습니다. 연결을 확인해 주세요."); }
     finally { setLoading(false); }
   }, [store]);
-  useEffect(() => { if (authed) void load(); }, [authed, load]);
+  useEffect(() => { void load(); }, [load]);
   const deleteEvent = async (item: LearningEvent) => {
     if (deleting || !window.confirm(`“${item.name}”을 삭제할까요? 학생용 링크는 사용할 수 없게 됩니다.`)) return;
     setDeleting(item.id); setError("");
@@ -208,9 +211,6 @@ function AdminHome() {
     catch { setError("삭제하지 못했습니다. 연결을 확인한 뒤 다시 시도해 주세요."); }
     finally { setDeleting(null); }
   };
-  if (!authed) return <AdminLogin onLogin={value => {
-    if (value.trim() === "admin") { localStorage.setItem(ADMIN_KEY, "true"); setAuthed(true); }
-  }} />;
   const event = events.find(item => item.id === EVENT_ID);
   if (EVENT_ID && event && !loading && !error) return <EventDashboard event={event} />;
   return <main className="page admin-page">
@@ -372,7 +372,7 @@ function StudentPage({ event }: { event: LearningEvent }) {
         return;
       }
 
-      if (navigator.onLine) {
+      if (navigator.onLine && store.mode === "local") {
         const nextGroup = await store.getGroup(groupId);
         setGroup(nextGroup);
       }
@@ -387,6 +387,11 @@ function StudentPage({ event }: { event: LearningEvent }) {
       window.removeEventListener("online", safeRefresh);
     };
   }, [flushPending, groupId, store]);
+
+  useEffect(() => {
+    if (!groupId) return;
+    return watchGroup(event.id, groupId, next => { if (!readPendingActions(groupId).length) setGroup(next); }, () => setNotice("기록을 불러오지 못했습니다. 연결을 확인해 주세요.")) ?? undefined;
+  }, [event.id, groupId]);
 
   const handleSession = (nextSession: StudentSession) => {
     saveStudentSession(nextSession);
@@ -496,6 +501,7 @@ function StudentPage({ event }: { event: LearningEvent }) {
       {notice && (!group || editingCourse || loadFailed) && <div className="notice" role="alert">{notice}</div>}
       {loadFailed && <button className="secondary-button" onClick={() => { loadGroup().catch(() => setNotice("불러오지 못했습니다. 연결을 확인해 주세요.")); }}>다시 시도</button>}
       {!session && <StudentStartForm event={event} onSubmit={handleSession} />}
+      {session && <LocationSharing event={event} classNo={session.classNo} groupNo={session.groupNo} />}
 
       {session && loading && (
         <div className="loading-box">
@@ -880,9 +886,11 @@ function EventDashboard({ event }: { event: LearningEvent }) {
   }, [loadGroups]);
 
   useEffect(() => {
+    const unsubscribe = watchGroups(event, setGroups, () => setAdminNotice("기록을 불러오지 못했습니다. 연결을 확인해 주세요."));
+    if (unsubscribe) return unsubscribe;
     const interval = window.setInterval(loadGroups, 5000);
     return () => window.clearInterval(interval);
-  }, [loadGroups]);
+  }, [event, loadGroups]);
 
   const selectedGroup = selectedGroupId ? groups.find((group) => group.id === selectedGroupId) ?? null : null;
 
@@ -963,6 +971,7 @@ function EventDashboard({ event }: { event: LearningEvent }) {
       </div>
       {event.isExample && <span className="readonly-badge">보기 전용 예시</span>}
       {adminNotice && <div className="notice" role="status">{adminNotice}</div>}
+      <TeacherLocationMap event={event} />
 
       <div className="admin-actions">
         <div className="tabs" role="tablist" aria-label="학급">
@@ -1021,36 +1030,6 @@ function EventDashboard({ event }: { event: LearningEvent }) {
           <HistoryList group={selectedGroup} />
         </section>
       )}
-    </main>
-  );
-}
-
-function AdminLogin({ onLogin }: { onLogin: (value: string) => void }) {
-  const [value, setValue] = useState("");
-
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    onLogin(value);
-  };
-
-  return (
-    <main className="page">
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">교사</p>
-          <h1>{APP_NAME}</h1>
-        </div>
-      </header>
-      <form className="panel" onSubmit={submit}>
-        <label>
-          관리자 입력
-          <input value={value} onChange={(event) => setValue(event.target.value)} placeholder="admin" />
-        </label>
-        <button className="primary-button" type="submit">
-          <LogIn size={20} />
-          들어가기
-        </button>
-      </form>
     </main>
   );
 }
