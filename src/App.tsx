@@ -187,6 +187,7 @@ function AdminHome() {
   const [creating, setCreating] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [deleting, setDeleting] = useState<string | null>(null);
   const load = useCallback(async () => {
     setLoading(true); setError("");
     try { setEvents(await store.listEvents()); }
@@ -194,6 +195,13 @@ function AdminHome() {
     finally { setLoading(false); }
   }, [store]);
   useEffect(() => { if (authed) void load(); }, [authed, load]);
+  const deleteEvent = async (item: LearningEvent) => {
+    if (deleting || !window.confirm(`“${item.name}”을 삭제할까요? 학생용 링크는 사용할 수 없게 됩니다. 기존 기록은 보관됩니다.`)) return;
+    setDeleting(item.id); setError("");
+    try { await store.deleteEvent(item.id); setEvents(old => old.filter(event => event.id !== item.id)); }
+    catch { setError("삭제하지 못했습니다. 연결을 확인한 뒤 다시 시도해 주세요."); }
+    finally { setDeleting(null); }
+  };
   if (!authed) return <AdminLogin onLogin={value => {
     if (value.trim() === "admin") { localStorage.setItem(ADMIN_KEY, "true"); setAuthed(true); }
   }} />;
@@ -206,9 +214,12 @@ function AdminHome() {
     {loading ? <div className="loading-box">불러오는 중</div> : EVENT_ID ? <div className="panel empty-state">찾을 수 없는 체험학습입니다. <a href="/admin">행사 목록</a></div> : <>
       <div className="event-toolbar"><button className="secondary-button" onClick={() => setCreating(value => !value)}><Plus size={18} />{creating ? "생성 취소" : "새 체험학습"}</button></div>
       {creating && <CreateEventForm onCreate={input => store.createEvent(input).then(created => { window.location.assign(`/admin?event=${encodeURIComponent(created.id)}`); })} />}
-      <div className="event-list">{events.map(item => <button key={item.id} className="panel event-card" onClick={() => window.location.assign(`/admin?event=${encodeURIComponent(item.id)}`)}>
-        <div>{item.isExample && <span className="readonly-badge">보기 전용 예시</span>}<h2>{item.name}</h2><p className="muted">{item.classGroupCounts.length}개 반 · {item.classGroupCounts.reduce((sum, count) => sum + count, 0)}개 모둠</p></div><span aria-hidden="true">→</span>
-      </button>)}</div>
+      <div className="event-list">{events.map(item => <div key={item.id} className="panel event-card">
+        <button className="event-open" disabled={deleting !== null} onClick={() => window.location.assign(`/admin?event=${encodeURIComponent(item.id)}`)}>
+          <div>{item.isExample && <span className="readonly-badge">보기 전용 예시</span>}<h2>{item.name}</h2><p className="muted">{item.classGroupCounts.length}개 반 · {item.classGroupCounts.reduce((sum, count) => sum + count, 0)}개 모둠</p></div><span aria-hidden="true">→</span>
+        </button>
+        {!item.isExample && item.id !== "legacy-fieldtrip" && <button className="icon-button danger" disabled={deleting !== null} onClick={() => void deleteEvent(item)} aria-label={`${item.name} 삭제`} title="체험학습 삭제">{deleting === item.id ? <Loader2 className="spin" size={18} /> : <Trash2 size={18} />}</button>}
+      </div>)}</div>
       {!events.length && !error && <p className="empty-state">아직 체험학습이 없습니다. 새 체험학습을 만들어 시작하세요.</p>}
     </>}
   </main>;

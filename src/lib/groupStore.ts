@@ -206,6 +206,7 @@ export interface EventStore {
   listEvents(): Promise<LearningEvent[]>;
   getEvent(id: string): Promise<LearningEvent | null>;
   createEvent(input: EventInput): Promise<LearningEvent>;
+  deleteEvent(id: string): Promise<void>;
 }
 
 function readLocalEvents(): Record<string, LearningEvent> {
@@ -219,13 +220,34 @@ export function getEventStore(): EventStore {
     mode: db ? "firebase" : "local",
     async listEvents() {
       const events = db ? (await getDocs(collection(db, "events"))).docs.map(item => ({ ...item.data(), id: item.id } as LearningEvent)) : Object.values(readLocalEvents());
-      return events.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      return events.filter(event => !event.deletedAt).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     },
     async getEvent(id) {
       if (!validEventId(id)) return null;
-      if (!db) return readLocalEvents()[id] ?? null;
+      if (!db) { const event = readLocalEvents()[id]; return event && !event.deletedAt ? event : null; }
       const snapshot = await getDoc(doc(db, "events", id));
-      return snapshot.exists() ? { ...snapshot.data(), id: snapshot.id } as LearningEvent : null;
+      return snapshot.exists() && !snapshot.data().deletedAt ? { ...snapshot.data(), id: snapshot.id } as LearningEvent : null;
+    },
+    async deleteEvent(id) {
+      if (!validEventId(id)) throw new Error("행사를 찾을 수 없습니다.");
+      const markDeleted = (event: LearningEvent) => {
+        if (event.isExample || event.id === "legacy-fieldtrip") throw new Error("보존된 행사는 삭제할 수 없습니다.");
+        return { ...event, deletedAt: event.deletedAt ?? new Date().toISOString() };
+      };
+      if (db) {
+        await runTransaction(db, async transaction => {
+          const ref = doc(db, "events", id);
+          const snapshot = await transaction.get(ref);
+          if (!snapshot.exists() || snapshot.data().deletedAt) return;
+          const event = markDeleted({ ...snapshot.data(), id } as LearningEvent);
+          transaction.update(ref, { deletedAt: event.deletedAt });
+        });
+      } else {
+        const events = readLocalEvents();
+        if (!events[id]) return;
+        events[id] = markDeleted(events[id]);
+        localStorage.setItem(LOCAL_EVENTS_KEY, JSON.stringify(events));
+      }
     },
     async createEvent(input) {
       const event: LearningEvent = { ...validateEventInput(input), id: createClientActionId(), createdAt: new Date().toISOString(), isExample: false };
@@ -243,11 +265,12 @@ export function getGroupStore(event: LearningEvent): GroupStore {
     const [classNo, groupNo] = id.split("-").map(Number);
     if (id !== `${classNo}-${groupNo}` || !validGroup(event, classNo, groupNo)) throw new Error("행사에 없는 반 또는 모둠입니다.");
   };
-  const checkWrite = () => { if (event.isExample) throw new Error("예시 체험학습은 보기 전용입니다."); };
+  const checkActive = () => { if (event.deletedAt || (!db && readLocalEvents()[event.id]?.deletedAt)) throw new Error("삭제된 행사입니다."); };
+  const checkWrite = () => { checkActive(); if (event.isExample) throw new Error("예시 체험학습은 보기 전용입니다."); };
   return {
     mode: store.mode,
-    getGroup(id) { checkId(id); return store.getGroup(id); },
-    listGroups() { return store.listGroups(); },
+    getGroup(id) { checkActive(); checkId(id); return store.getGroup(id); },
+    listGroups() { checkActive(); return store.listGroups(); },
     saveGroup(group) { checkWrite(); checkId(group.id); if (group.id !== `${group.classNo}-${group.groupNo}`) throw new Error("모둠 정보가 일치하지 않습니다."); return store.saveGroup(group); },
     clearAllGroups() { checkWrite(); return store.clearAllGroups(); },
     updateCourse(id, input) { checkWrite(); checkId(id); return store.updateCourse(id, input); },

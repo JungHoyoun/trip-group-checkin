@@ -43,7 +43,8 @@ service cloud.firestore {
     }
     function writableEvent(eventId) {
       return exists(/databases/$(database)/documents/events/$(eventId))
-        && get(/databases/$(database)/documents/events/$(eventId)).data.isExample == false;
+        && get(/databases/$(database)/documents/events/$(eventId)).data.isExample == false
+        && get(/databases/$(database)/documents/events/$(eventId)).data.get("deletedAt", null) == null;
     }
     function validGroup(eventId, groupId, data) {
       let counts = get(/databases/$(database)/documents/events/$(eventId)).data.classGroupCounts;
@@ -54,9 +55,14 @@ service cloud.firestore {
     match /events/{eventId} {
       allow read: if true;
       allow create: if validEvent(request.resource.data, eventId);
-      allow update, delete: if false;
+      allow update: if resource.data.isExample == false && eventId != "legacy-fieldtrip"
+        && resource.data.get("deletedAt", null) == null
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deletedAt'])
+        && request.resource.data.deletedAt is string;
+      allow delete: if false;
       match /groups/{groupId} {
-        allow read: if exists(/databases/$(database)/documents/events/$(eventId));
+        allow read: if exists(/databases/$(database)/documents/events/$(eventId))
+          && get(/databases/$(database)/documents/events/$(eventId)).data.get("deletedAt", null) == null;
         allow create, update: if writableEvent(eventId) && validGroup(eventId, groupId, request.resource.data);
         allow delete: if writableEvent(eventId);
       }

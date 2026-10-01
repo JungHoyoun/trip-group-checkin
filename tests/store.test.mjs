@@ -63,3 +63,23 @@ test("replaying offline undo cannot remove an extra history entry", () => {
   assert.equal(undone.history.length, 1);
   assert.deepEqual(logic.applyGroupAction(undone, undo), undone);
 });
+
+test("deleting a created event removes access while preserving other events and records", async () => {
+  const events = getEventStore();
+  const a = await events.createEvent({ name: "삭제 대상", classGroupCounts: [1] });
+  const b = await events.createEvent({ name: "유지 대상", classGroupCounts: [1] });
+  const stale = getGroupStore(a);
+  await stale.saveGroup(initial());
+  await events.deleteEvent(a.id);
+  assert.equal(await events.getEvent(a.id), null);
+  assert.ok(!(await events.listEvents()).some(event => event.id === a.id));
+  assert.equal((await events.getEvent(b.id)).name, "유지 대상");
+  assert.throws(() => stale.saveGroup(initial()), /삭제된/);
+  assert.ok(data.get(`trip-checkin-v5-${a.id}-groups`));
+  for (const id of ["example-fieldtrip", "legacy-fieldtrip"]) {
+    const saved = JSON.parse(data.get("trip-checkin-v5-events"));
+    saved[id] = { ...a, id, isExample: id === "example-fieldtrip", deletedAt: undefined };
+    data.set("trip-checkin-v5-events", JSON.stringify(saved));
+    await assert.rejects(events.deleteEvent(id), /보존된/);
+  }
+});
