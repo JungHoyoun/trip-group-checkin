@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { LearningEvent } from "../types";
 import { LOCATION_INTERVAL_MS, validCoordinates } from "../lib/locationLogic";
-import { publishLocation, stopLocation, studentLocationInvite } from "../lib/locationStore";
+import { publishLocation, stopLocation, claimLocationDevice, watchLocationDevice } from "../lib/locationStore";
 
 export function LocationSharing({ event, classNo, groupNo, activityActive, activityFinished }: { event: LearningEvent; classNo: number; groupNo: number; activityActive: boolean; activityFinished: boolean }) {
-  const inviteId = new URLSearchParams(window.location.search).get("locationInvite");
-  const storageKey = `trip-location:${event.id}:${classNo}-${groupNo}:${inviteId}`;
+  const [bindingId, setBindingId] = useState<string | null>(null);
+  const storageKey = `trip-location-device:${event.id}:${classNo}-${groupNo}`;
   const [sharing, setSharing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
@@ -15,7 +15,7 @@ export function LocationSharing({ event, classNo, groupNo, activityActive, activ
   const lastAttempt = useRef(0);
   const wasActive = useRef(false);
   useEffect(() => {
-    if (!inviteId || event.isExample) return;
+    if (event.isExample) return;
     let active = true;
     const previouslyActive = wasActive.current;
     wasActive.current = activityActive;
@@ -29,7 +29,6 @@ export function LocationSharing({ event, classNo, groupNo, activityActive, activ
         const cleanupLocation = async () => {
           try {
             await pendingWrite.current?.catch(() => {});
-            await studentLocationInvite(event.id, inviteId);
             if (!active) return;
             // A denied GPS permission may mean this device never published a point.
             if (localStorage.getItem(`${storageKey}:sent`)) await stopLocation(event.id, `${classNo}-${groupNo}`);
@@ -48,18 +47,28 @@ export function LocationSharing({ event, classNo, groupNo, activityActive, activ
     void (async () => {
       try {
         if (!navigator.geolocation) throw new Error("이 브라우저는 위치 공유를 지원하지 않습니다.");
-        const invite = await studentLocationInvite(event.id, inviteId);
-        if (!invite.active || invite.classNo !== classNo || invite.groupNo !== groupNo) throw new Error("링크에 지정된 반·모둠을 선택해 주세요.");
+        const claimed = await claimLocationDevice(event.id, classNo, groupNo);
         if (!active) return;
+        setBindingId(claimed);
         localStorage.removeItem(storageKey);
         lastAttempt.current = Number(localStorage.getItem(`${storageKey}:sent`)) || 0;
         setSharing(true); setNotice("관람 중 위치가 선생님에게 공유됩니다.");
       } catch (error) { if (active) setNotice(error instanceof Error ? error.message : "위치 공유를 시작하지 못했습니다."); }
     })();
     return () => { active = false; };
-  }, [activityActive, activityFinished, inviteId, event.id, event.isExample, classNo, groupNo, storageKey]);
+  }, [activityActive, activityFinished, event.id, event.isExample, classNo, groupNo, storageKey]);
   useEffect(() => {
-    if (!sharing || !inviteId || !activityActive) return;
+    if (!bindingId) return;
+    return watchLocationDevice(event.id, `${classNo}-${groupNo}`, current => {
+      if (current !== bindingId) {
+        ++generation.current; setSharing(false); setBindingId(null);
+        localStorage.removeItem(`${storageKey}:sent`);
+        setNotice("선생님이 위치 공유 기기를 초기화했습니다. 새 모둠장 기기에서 관람을 계속해 주세요.");
+      }
+    });
+  }, [bindingId, event.id, classNo, groupNo, storageKey]);
+  useEffect(() => {
+    if (!sharing || !bindingId || !activityActive) return;
     let active = true;
     const currentGeneration = ++generation.current;
     const send = () => {
@@ -72,12 +81,12 @@ export function LocationSharing({ event, classNo, groupNo, activityActive, activ
           if (!active || currentGeneration !== generation.current) return;
           const { latitude, longitude, accuracy } = position.coords;
           if (!validCoordinates(latitude, longitude, accuracy)) throw new Error("위치를 확인하지 못했습니다.");
-          pendingWrite.current = publishLocation(event.id, { classNo, groupNo, latitude, longitude, accuracy, measuredAt: position.timestamp, inviteId });
+          pendingWrite.current = publishLocation(event.id, { classNo, groupNo, latitude, longitude, accuracy, measuredAt: position.timestamp, bindingId });
           await pendingWrite.current;
           lastAttempt.current = Date.now();
           localStorage.setItem(`${storageKey}:sent`, String(lastAttempt.current));
           if (active) setNotice(`${new Date(position.timestamp).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })} 위치 전송 · 약 3분 간격`);
-        } catch { if (active) { setNotice("위치를 전송하지 못했습니다. 연결과 공유 링크를 확인해 주세요."); } }
+        } catch { if (active) { setNotice("위치를 전송하지 못했습니다. 연결과 기기 등록 상태를 확인해 주세요."); } }
         finally { running.current = false; pendingWrite.current = null; }
       }, error => {
         running.current = false;
@@ -91,8 +100,8 @@ export function LocationSharing({ event, classNo, groupNo, activityActive, activ
     document.addEventListener("visibilitychange", send);
     window.addEventListener("online", send);
     return () => { active = false; ++generation.current; window.clearInterval(timer); document.removeEventListener("visibilitychange", send); window.removeEventListener("online", send); };
-  }, [sharing, inviteId, event.id, classNo, groupNo, activityActive, storageKey]);
-  if (!inviteId || event.isExample) return null;
+  }, [sharing, bindingId, event.id, classNo, groupNo, activityActive, storageKey]);
+  if (event.isExample) return null;
   const toggle = async () => {
     setBusy(true);
     try {
@@ -106,8 +115,8 @@ export function LocationSharing({ event, classNo, groupNo, activityActive, activ
         setNotice("위치 공유를 종료했습니다.");
       } else {
         if (!navigator.geolocation) throw new Error("이 브라우저는 위치 공유를 지원하지 않습니다.");
-        const invite = await studentLocationInvite(event.id, inviteId);
-        if (!invite.active || invite.classNo !== classNo || invite.groupNo !== groupNo) throw new Error("링크에 지정된 반·모둠을 선택해 주세요.");
+        const claimed = await claimLocationDevice(event.id, classNo, groupNo);
+        setBindingId(claimed);
         localStorage.removeItem(storageKey);
         lastAttempt.current = Number(localStorage.getItem(`${storageKey}:sent`)) || 0; setSharing(true); setNotice("현재 위치를 확인하고 있습니다.");
       }

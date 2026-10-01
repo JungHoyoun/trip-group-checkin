@@ -67,7 +67,7 @@ test("Firestore rules enforce event boundaries and readonly examples", { skip: !
 
 });
 
-test("location privacy, invite isolation and three-minute write limit", { skip: !host }, async () => {
+test("location device ownership, teacher reset and three-minute write limit", { skip: !host }, async () => {
   await request("locationConfig/access", "PATCH", { teacherUids: ["test-teacher"] }, true);
   const id = `location-${Date.now()}`, inviteId = "a".repeat(32), student = token("student-a"), other = token("student-b");
   assert.equal((await request(`events/${id}`, "PATCH", event(id), false, null)).status, 403);
@@ -78,7 +78,15 @@ test("location privacy, invite isolation and three-minute write limit", { skip: 
   assert.equal((await request(`events/${id}/locationInvites/${inviteId}`, "GET", undefined, false, null)).status, 403);
   assert.equal((await request(`events/${id}/locationInvites/${inviteId}`, "GET", undefined, false, student)).status, 200);
   assert.equal((await request(`events/${id}/locationInvites`, "GET", undefined, false, student)).status, 403);
-  const point = { ...invite, latitude: 35.15, longitude: 126.85, accuracy: 20, measuredAt: Date.now(), publisherUid: "student-a", inviteId };
+  const device = { publisherUid: "student-a", bindingId: "c".repeat(32) };
+  assert.equal((await request(`events/${id}/locationDevices/1-1`, "PATCH", device, false, null)).status, 403);
+  assert.equal((await request(`events/${id}/locationDevices/1-1`, "PATCH", device, false, student)).status, 200);
+  assert.equal((await request(`events/${id}/locationDevices/1-1`, "PATCH", { ...device, publisherUid: "student-b" }, false, other)).status, 403);
+  assert.equal((await request(`events/${id}/locationDevices/1-1`, "PATCH", { ...device, bindingId: "d".repeat(32) }, false, student)).status, 403);
+  assert.equal((await request(`events/${id}/locationDevices/1-1`, "DELETE", undefined, false, student)).status, 403);
+  assert.equal((await request(`events/${id}/locationDevices/1-3`, "PATCH", device, false, student)).status, 403);
+  assert.equal((await request(`events/${id}/locationDevices`, "GET", undefined, false, student)).status, 403);
+  const point = { ...invite, latitude: 35.15, longitude: 126.85, accuracy: 20, measuredAt: Date.now(), publisherUid: "student-a", bindingId: device.bindingId };
   delete point.active;
   const publish = async (record, groupId = "1-1", credential = student) => fetch(`${base}:commit`, {
     method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${credential}` },
@@ -95,6 +103,11 @@ test("location privacy, invite isolation and three-minute write limit", { skip: 
   assert.equal((await request(`events/${id}/locations/1-1`, "DELETE", undefined, false, student)).status, 200);
   assert.equal((await publish({ ...point, latitude: 91 })).status, 403);
   assert.equal((await publish({ ...point, measuredAt: Date.now() - 600000 })).status, 403);
-  await request(`events/${id}/locationInvites/${inviteId}`, "PATCH", { ...invite, active: false });
+  const reset = { publisherUid: null, bindingId: "d".repeat(32) };
+  assert.equal((await request(`events/${id}/locationDevices/1-1`, "PATCH", reset, false, student)).status, 403);
+  assert.equal((await request(`events/${id}/locationDevices/1-1`, "PATCH", reset)).status, 200);
   assert.equal((await publish(point)).status, 403);
+  assert.equal((await request(`events/${id}/locationDevices/1-1`, "PATCH", { publisherUid: "student-b", bindingId: reset.bindingId }, false, other)).status, 200);
+  assert.equal((await publish({ ...point, publisherUid: "student-b", bindingId: reset.bindingId }, "1-1", other)).status, 200);
+  assert.equal((await publish({ ...point, publisherUid: "student-b", bindingId: device.bindingId }, "1-1", other)).status, 403);
 });

@@ -92,11 +92,10 @@ service cloud.firestore {
       match /locations/{groupId} {
         function validLocation() {
           let data = request.resource.data;
-          let invite = get(/databases/$(database)/documents/events/$(eventId)/locationInvites/$(data.inviteId)).data;
+          let device = get(/databases/$(database)/documents/events/$(eventId)/locationDevices/$(groupId)).data;
           return request.auth != null && writableEvent(eventId)
-            && data.keys().hasOnly(['classNo', 'groupNo', 'latitude', 'longitude', 'accuracy', 'measuredAt', 'receivedAt', 'publisherUid', 'inviteId'])
-            && data.inviteId is string && invite.active == true
-            && invite.classNo == data.classNo && invite.groupNo == data.groupNo
+            && data.keys().hasOnly(['classNo', 'groupNo', 'latitude', 'longitude', 'accuracy', 'measuredAt', 'receivedAt', 'publisherUid', 'bindingId'])
+            && device.publisherUid == request.auth.uid && data.bindingId == device.bindingId
             && validGroup(eventId, groupId, {'id': groupId, 'classNo': data.classNo, 'groupNo': data.groupNo})
             && data.publisherUid == request.auth.uid
             && data.latitude is number && data.latitude >= -90 && data.latitude <= 90
@@ -111,6 +110,27 @@ service cloud.firestore {
         allow update: if validLocation() && resource.data.publisherUid == request.auth.uid
           && request.time >= resource.data.receivedAt + duration.value(180, 's');
         allow delete: if locationTeacher() || (request.auth != null && resource.data.publisherUid == request.auth.uid);
+      }
+      match /locationDevices/{groupId} {
+        function validDevice() {
+          let data = request.resource.data;
+          let parts = groupId.split('-');
+          return data.keys().hasAll(['publisherUid', 'bindingId'])
+            && data.keys().hasOnly(['publisherUid', 'bindingId'])
+            && data.bindingId is string && data.bindingId.matches('^[a-f0-9]{32}$')
+            && parts.size() == 2
+            && validGroup(eventId, groupId, {'id': groupId, 'classNo': int(parts[0]), 'groupNo': int(parts[1])});
+        }
+        allow get: if request.auth != null && writableEvent(eventId);
+        allow list: if false;
+        allow create: if request.auth != null && writableEvent(eventId) && validDevice()
+          && (request.resource.data.publisherUid == request.auth.uid || (locationTeacher() && request.resource.data.publisherUid == null));
+        allow update: if writableEvent(eventId) && validDevice() && (
+          (locationTeacher() && request.resource.data.publisherUid == null)
+          || (request.auth != null && resource.data.publisherUid == null
+            && request.resource.data.publisherUid == request.auth.uid
+            && request.resource.data.bindingId == resource.data.bindingId));
+        allow delete: if locationTeacher() && writableEvent(eventId);
       }
       match /groups/{groupId} {
         allow read: if exists(/databases/$(database)/documents/events/$(eventId))

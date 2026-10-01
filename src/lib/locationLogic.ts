@@ -7,7 +7,7 @@ export interface SharedLocation {
   accuracy: number;
   measuredAt: number;
   publisherUid: string;
-  inviteId: string;
+  bindingId: string;
 }
 export function validCoordinates(latitude: number, longitude: number, accuracy: number) {
   return Number.isFinite(latitude) && latitude >= -90 && latitude <= 90

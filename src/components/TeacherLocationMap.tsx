@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import type { LearningEvent } from "../types";
 import { isStale, locationLabel, type SharedLocation } from "../lib/locationLogic";
-import { createLocationInvite, isLocationTeacher, locationAuth, watchLocation } from "../lib/locationStore";
+import { resetLocationDevice, isLocationTeacher, locationAuth, watchLocation } from "../lib/locationStore";
 
 interface Coordinate { lat(): number; lng(): number }
 interface MapInstance { setCenter(point: Coordinate): void; destroy(): void }
@@ -89,7 +89,6 @@ export function TeacherLocationMap({ event, classNo, groupNo }: { event: Learnin
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
-  const [link, setLink] = useState("");
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     if (event.isExample) return;
@@ -107,14 +106,14 @@ export function TeacherLocationMap({ event, classNo, groupNo }: { event: Learnin
     return () => { unsubscribe(); window.clearInterval(timer); };
   }, [allowed, event.id, classNo, groupNo]);
   if (event.isExample) return null;
-  const invite = async () => {
-    setBusy(true); setNotice(""); setLink("");
+  const resetDevice = async () => {
+    if (!window.confirm(`${classNo}반 ${groupNo}모둠의 위치 공유 기기를 초기화할까요? 현재 공유가 중지되고, 다음에 접속한 모둠장 기기가 등록됩니다.`)) return;
+    setBusy(true); setNotice("");
     try {
-      const url = await createLocationInvite(event.id, classNo, groupNo); setLink(url);
-      try { await navigator.clipboard.writeText(url); setNotice("모둠장용 위치 공유 링크를 복사했습니다. 이전 링크는 종료됩니다."); }
-      catch { setNotice("아래 링크를 복사해 모둠장에게 공유하세요. 이전 링크는 종료됩니다."); }
-    } catch { setNotice("링크를 만들지 못했습니다. 교사 권한과 연결을 확인해 주세요."); }
+      await resetLocationDevice(event.id, classNo, groupNo);
+      setNotice("기기를 초기화했습니다. 새 모둠장은 공통 학생 링크에서 반·모둠을 선택해 주세요.");
+    } catch { setNotice("기기를 초기화하지 못했습니다. 교사 권한과 연결을 확인해 주세요."); }
     finally { setBusy(false); }
   };
-  return <section className="panel nested-panel location-panel"><h3>마지막 위치</h3>{!allowed ? <p className="muted">교사 권한 확인 중</p> : <>{loading ? <p className="muted">위치 확인 중</p> : location ? <LocationMap location={location} now={now} /> : <p className="muted">아직 공유된 위치가 없습니다.</p>}<div className="location-invite"><button className="secondary-button" type="button" disabled={busy} onClick={() => void invite()}>이 모둠 위치 공유 링크</button></div>{link && <input className="location-link" aria-label="모둠장 위치 공유 링크" value={link} readOnly onFocus={e => e.target.select()} />}</>}{notice && <p role="status">{notice}</p>}</section>;
+  return <section className="panel nested-panel location-panel"><h3>마지막 위치</h3>{!allowed ? <p className="muted">교사 권한 확인 중</p> : <>{loading ? <p className="muted">위치 확인 중</p> : location ? <LocationMap location={location} now={now} /> : <p className="muted">아직 공유된 위치가 없습니다.</p>}<div className="location-invite"><button className="secondary-button" type="button" disabled={busy} onClick={() => void resetDevice()}>위치 공유 기기 초기화</button></div></>}{notice && <p role="status">{notice}</p>}</section>;
 }

@@ -1,5 +1,5 @@
 import { getAuth, signInWithEmailAndPassword, signInAnonymously } from "firebase/auth";
-import { collection, deleteDoc, doc, getDoc, getDocFromServer, onSnapshot, setDoc, serverTimestamp } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDocFromServer, onSnapshot, runTransaction, setDoc, serverTimestamp, writeBatch } from "firebase/firestore";
 import { getDb } from "./groupStore";
 import type { SharedLocation } from "./locationLogic";
 import { teacherPasswordFromCode } from "./teacherCode";
@@ -20,27 +20,30 @@ export async function isLocationTeacher() {
   try { const snapshot = await getDocFromServer(doc(db, "locationConfig", "access")); return snapshot.exists() && snapshot.data().teacherUids?.includes(user.uid) === true; }
   catch { return false; }
 }
-export async function studentLocationInvite(eventId: string, inviteId: string) {
+export async function claimLocationDevice(eventId: string, classNo: number, groupNo: number) {
   const db = getDb(), auth = locationAuth();
   if (!db || !auth) throw new Error("위치 공유 설정이 필요합니다.");
   await auth.authStateReady();
   if (!auth.currentUser) await signInAnonymously(auth);
-  const snapshot = await getDoc(doc(db, "events", eventId, "locationInvites", inviteId));
-  if (!snapshot.exists()) throw new Error("사용할 수 없는 위치 공유 링크입니다.");
-  return snapshot.data() as { classNo: number; groupNo: number; active: boolean };
+  const uid = auth.currentUser!.uid;
+  const ref = doc(db, "events", eventId, "locationDevices", `${classNo}-${groupNo}`);
+  return runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(ref);
+    const binding = snapshot.exists() ? snapshot.data() : null;
+    if (binding?.publisherUid && binding.publisherUid !== uid) throw new Error("다른 모둠장 기기가 등록되어 있습니다. 선생님에게 위치 공유 기기 초기화를 요청해 주세요.");
+    const bindingId = binding?.bindingId ?? crypto.randomUUID().replace(/-/g, "");
+    if (!binding?.publisherUid) transaction.set(ref, { publisherUid: uid, bindingId });
+    return bindingId as string;
+  });
 }
-export async function createLocationInvite(eventId: string, classNo: number, groupNo: number) {
+export async function resetLocationDevice(eventId: string, classNo: number, groupNo: number) {
   const db = getDb();
   if (!db) throw new Error("Firebase 설정이 필요합니다.");
-  // A teacher can revoke all links for a group without disclosing a capability to public group records.
   const groupId = `${classNo}-${groupNo}`;
-  const previous = await getDoc(doc(db, "events", eventId, "locationInviteIndex", groupId));
-  if (previous.exists()) await setDoc(doc(db, "events", eventId, "locationInvites", previous.data().inviteId), { active: false }, { merge: true });
-  const inviteId = crypto.randomUUID().replace(/-/g, "");
-  await setDoc(doc(db, "events", eventId, "locationInvites", inviteId), { classNo, groupNo, active: true });
-  await setDoc(doc(db, "events", eventId, "locationInviteIndex", groupId), { inviteId });
-  await deleteDoc(doc(db, "events", eventId, "locations", groupId));
-  return `${window.location.origin}/?event=${encodeURIComponent(eventId)}&locationInvite=${inviteId}`;
+  const batch = writeBatch(db);
+  batch.set(doc(db, "events", eventId, "locationDevices", groupId), { publisherUid: null, bindingId: crypto.randomUUID().replace(/-/g, "") });
+  batch.delete(doc(db, "events", eventId, "locations", groupId));
+  await batch.commit();
 }
 export async function publishLocation(eventId: string, location: Omit<SharedLocation, "publisherUid">) {
   const db = getDb(), user = locationAuth()?.currentUser;
@@ -59,6 +62,11 @@ export function watchLocations(eventId: string, next: (locations: SharedLocation
   return onSnapshot(collection(db, "events", eventId, "locations"), snapshot => {
     next(snapshot.docs.map(item => item.data() as SharedLocation));
   }, error);
+}
+export function watchLocationDevice(eventId: string, groupId: string, next: (bindingId: string | null) => void) {
+  const db = getDb();
+  if (!db) return () => {};
+  return onSnapshot(doc(db, "events", eventId, "locationDevices", groupId), snapshot => next(snapshot.exists() ? snapshot.data().bindingId : null), () => next(null));
 }
 
 export function watchLocation(eventId: string, groupId: string, next: (location: SharedLocation | null) => void, error: () => void) {
