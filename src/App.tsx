@@ -6,6 +6,7 @@ import {
   Loader2,
   LogIn,
   Plus,
+  Pencil,
   RefreshCw,
   Save,
   Trash2,
@@ -188,6 +189,8 @@ function AdminHome() {
   const [authed, setAuthed] = useState(() => localStorage.getItem(ADMIN_KEY) === "true");
   const [events, setEvents] = useState<LearningEvent[]>([]);
   const [creating, setCreating] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [eventNotice, setEventNotice] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -209,22 +212,29 @@ function AdminHome() {
     if (value.trim() === "admin") { localStorage.setItem(ADMIN_KEY, "true"); setAuthed(true); }
   }} />;
   const event = events.find(item => item.id === EVENT_ID);
-  if (EVENT_ID && event && !loading && !error) return <EventDashboard event={event} onUpdate={async input => {
-    const updated = await store.updateEvent(event.id, input);
-    setEvents(old => old.map(item => item.id === updated.id ? updated : item));
-  }} />;
+  if (EVENT_ID && event && !loading && !error) return <EventDashboard event={event} />;
   return <main className="page admin-page">
     <header className="topbar"><div><p className="eyebrow">교사</p><h1>{APP_NAME}</h1></div></header>
     <ModeBanner mode={store.mode} />
     {error && <div className="notice" role="alert">{error}<button className="secondary-button" onClick={() => void load()}>다시 시도</button></div>}
     {loading ? <div className="loading-box">불러오는 중</div> : EVENT_ID ? <div className="panel empty-state">찾을 수 없는 체험학습입니다. <a href="/admin">행사 목록</a></div> : <>
-      <div className="event-toolbar"><button className="secondary-button" onClick={() => setCreating(value => !value)}><Plus size={18} />{creating ? "생성 취소" : "새 체험학습"}</button></div>
+      <div className="event-toolbar"><button className="secondary-button" disabled={editingId !== null || deleting !== null} onClick={() => { setEventNotice(""); setCreating(value => !value); }}><Plus size={18} />{creating ? "생성 취소" : "새 체험학습"}</button></div>
       {creating && <CreateEventForm onCreate={input => store.createEvent(input).then(created => { window.location.assign(`/admin?event=${encodeURIComponent(created.id)}`); })} />}
-      <div className="event-list">{events.map(item => <div key={item.id} className="panel event-card">
-        <button className="event-open" disabled={deleting !== null} onClick={() => window.location.assign(`/admin?event=${encodeURIComponent(item.id)}`)}>
+      {eventNotice && <div className="notice" role="status">{eventNotice}</div>}
+      <div className="event-list">{events.map(item => <div key={item.id} className="event-item"><div className="panel event-card">
+        <button className="event-open" disabled={deleting !== null || editingId !== null} onClick={() => window.location.assign(`/admin?event=${encodeURIComponent(item.id)}`)}>
           <div>{item.isExample && <span className="readonly-badge">보기 전용 예시</span>}<h2>{item.name}</h2><p className="muted">{item.classGroupCounts.length}개 반 · {item.classGroupCounts.reduce((sum, count) => sum + count, 0)}개 모둠</p></div><span aria-hidden="true">→</span>
         </button>
-        {!item.isExample && <button className="icon-button danger" disabled={deleting !== null} onClick={() => void deleteEvent(item)} aria-label={`${item.name} 삭제`} title="체험학습 삭제">{deleting === item.id ? <Loader2 className="spin" size={18} /> : <Trash2 size={18} />}</button>}
+        {!item.isExample && <div className="event-card-actions">
+          <button className="icon-button" type="button" disabled={deleting !== null || editingId !== null} onClick={() => { setCreating(false); setEventNotice(""); setEditingId(item.id); }} aria-label={`${item.name} 편집`} title="체험학습 편집" aria-expanded={editingId === item.id} aria-controls={`event-settings-${item.id}`}><Pencil size={18} /></button>
+          <button className="icon-button danger" type="button" disabled={deleting !== null || editingId !== null} onClick={() => void deleteEvent(item)} aria-label={`${item.name} 삭제`} title="체험학습 삭제">{deleting === item.id ? <Loader2 className="spin" size={18} /> : <Trash2 size={18} />}</button>
+        </div>}
+      </div>
+      {editingId === item.id && <div id={`event-settings-${item.id}`}><CreateEventForm initialEvent={item} onCancel={() => setEditingId(null)} onCreate={async input => {
+        const updated = await store.updateEvent(item.id, input);
+        setEvents(old => old.map(current => current.id === updated.id ? updated : current));
+        setEditingId(null); setEventNotice(`${item.name}의 반·모둠 설정을 저장했습니다.`);
+      }} /></div>}
       </div>)}</div>
       {!events.length && !error && <p className="empty-state">아직 체험학습이 없습니다. 새 체험학습을 만들어 시작하세요.</p>}
     </>}
@@ -818,9 +828,7 @@ function HistoryList({ group }: { group: GroupRecord }) {
   );
 }
 
-function EventDashboard({ event, onUpdate }: { event: LearningEvent; onUpdate: (input: EventInput) => Promise<void> }) {
-  const [editingSettings, setEditingSettings] = useState(false);
-  useEffect(() => { setSelectedClass(old => Math.min(old, event.classGroupCounts.length)); }, [event.classGroupCounts.length]);
+function EventDashboard({ event }: { event: LearningEvent }) {
   const store = useMemo(() => getGroupStore(event), [event]);
   const [groups, setGroups] = useState<GroupRecord[]>([]);
   const [selectedClass, setSelectedClass] = useState(1);
@@ -920,10 +928,6 @@ function EventDashboard({ event, onUpdate }: { event: LearningEvent; onUpdate: (
         }}>학생용 링크 복사</button>}
       </div>
       <h2 className="event-title">{event.name}</h2>
-      {!event.isExample && !editingSettings && <button className="secondary-button" onClick={() => setEditingSettings(true)}>반·모둠 설정 수정</button>}
-      {editingSettings && <CreateEventForm initialEvent={event} onCancel={() => setEditingSettings(false)} onCreate={async input => {
-        await onUpdate(input); setEditingSettings(false); setSelectedGroupId(null); setAdminNotice("반·모둠 설정을 저장했습니다.");
-      }} />}
       {event.isExample && <span className="readonly-badge">보기 전용 예시</span>}
       {adminNotice && <div className="notice" role="status">{adminNotice}</div>}
 

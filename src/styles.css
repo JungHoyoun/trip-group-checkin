@@ -632,3 +632,6 @@ button:focus-visible {
 
 .event-open { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex: 1; min-width: 0; padding: 0; border: 0; color: inherit; background: transparent; text-align: left; }
 .event-open > div { min-width: 0; }
+
+.event-card-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.event-item .event-form { margin-top: 8px; }
