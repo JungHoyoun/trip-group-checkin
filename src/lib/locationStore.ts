@@ -2,6 +2,7 @@ import { getAuth, signInWithEmailAndPassword, signInAnonymously } from "firebase
 import { collection, deleteDoc, doc, getDoc, getDocFromServer, onSnapshot, setDoc, serverTimestamp } from "firebase/firestore";
 import { getDb } from "./groupStore";
 import type { SharedLocation } from "./locationLogic";
+import { teacherPasswordFromCode } from "./teacherCode";
 
 export function locationAuth() {
   const db = getDb();
@@ -10,7 +11,7 @@ export function locationAuth() {
 export async function teacherLogin(code: string) {
   const auth = locationAuth();
   if (!auth) throw new Error("Firebase 설정이 필요합니다.");
-  await signInWithEmailAndPassword(auth, "teacher@fieldtrip.local", code);
+  await signInWithEmailAndPassword(auth, "teacher@fieldtrip.local", await teacherPasswordFromCode(code));
 }
 export async function isLocationTeacher() {
   const db = getDb(), user = locationAuth()?.currentUser;
