@@ -644,6 +644,11 @@ button:focus-visible {
 .event-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; margin: 18px 0 12px; }
 .event-heading .event-title { flex: 1 1 200px; margin: 0; font-size: 30px; line-height: 1.2; }
 .event-heading .event-record-actions { flex-shrink: 0; }
+.event-title-row { display: flex; align-items: center; gap: 8px; flex: 1 1 200px; min-width: 0; }
+.event-title-row .event-title { flex: 0 1 auto; min-width: 0; }
+.event-refresh { border: 0; background: transparent; color: #64748b; }
+.event-refresh:hover:not(:disabled) { color: #2563eb; }
+
 @media (max-width: 640px) {
   .event-heading .event-title { font-size: 28px; }
 }

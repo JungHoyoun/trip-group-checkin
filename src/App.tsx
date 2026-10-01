@@ -914,16 +914,17 @@ function EventDashboard({ event }: { event: LearningEvent }) {
           <p className="eyebrow">교사</p>
           <h1><a className="app-title-link" href="/admin" title="행사 목록으로 돌아가기">{APP_NAME}</a></h1>
         </div>
-        <div className="topbar-actions">
-          <button className="icon-button" type="button" onClick={loadGroups} aria-label="새로고침">
-            {loading ? <Loader2 className="spin" size={18} /> : <RefreshCw size={18} />}
-          </button>
-        </div>
+
       </header>
 
       <ModeBanner mode={store.mode} />
       <div className="event-heading">
-        <h2 className="event-title">{event.name}</h2>
+        <div className="event-title-row">
+          <h2 className="event-title">{event.name}</h2>
+          <button className="icon-button event-refresh" type="button" onClick={loadGroups} aria-label="새로고침" title="새로고침" disabled={loading}>
+            {loading ? <Loader2 className="spin" size={18} /> : <RefreshCw size={18} />}
+          </button>
+        </div>
         <div className="event-record-actions" role="group" aria-label="행사 도구">
 
         {!event.isExample && <button className="secondary-button" type="button" onClick={async () => {
