@@ -9,6 +9,7 @@ export function locationAuth() {
   return db ? getAuth(db.app) : null;
 }
 export async function teacherLogin(code: string) {
+  if (!/^[A-Za-z]+$/.test(code)) throw new Error("영문 알파벳만 입력해 주세요.");
   const auth = locationAuth();
   if (!auth) throw new Error("Firebase 설정이 필요합니다.");
   await signInWithEmailAndPassword(auth, "teacher@fieldtrip.local", await teacherPasswordFromCode(code));

@@ -22,7 +22,9 @@ export function TeacherGate({ children }: { children: ReactNode }) {
     return () => { active = false; unsubscribe(); };
   }, []);
   const submit = async (e: FormEvent) => {
-    e.preventDefault(); setBusy(true); setError("");
+    e.preventDefault();
+    if (!/^[A-Za-z]+$/.test(code)) { setError("영문 알파벳만 입력해 주세요."); return; }
+    setBusy(true); setError("");
     try {
       await teacherLogin(code);
       const permitted = await isLocationTeacher();
@@ -32,6 +34,10 @@ export function TeacherGate({ children }: { children: ReactNode }) {
     finally { setBusy(false); }
   };
   if (loading) return <main className="page"><h1>{APP_NAME}</h1><p role="status">교사 권한 확인 중</p></main>;
-  if (!allowed) return <main className="page"><h1>{APP_NAME}</h1><form className="panel" onSubmit={submit}><h2>교사 로그인</h2><label className="field"><span>교사용 코드</span><input type="password" value={code} onChange={e => setCode(e.target.value)} autoComplete="current-password" placeholder="교사용 코드를 입력하세요" required /></label>{error && <p role="alert">{error}</p>}<button className="primary-button" type="submit" disabled={busy || !code}>{busy ? "확인 중" : "입장"}</button></form></main>;
+  if (!allowed) return <main className="page"><h1>{APP_NAME}</h1><form className="panel" onSubmit={submit}><h2>교사 로그인</h2><label className="field"><span>교사용 코드</span><input type="password" value={code} onChange={e => {
+    const value = e.target.value;
+    if (/^[A-Za-z]*$/.test(value)) { setCode(value); setError(""); }
+    else setError("영문 알파벳만 입력해 주세요.");
+  }} autoComplete="current-password" autoCapitalize="none" autoCorrect="off" spellCheck={false} lang="en" pattern="[A-Za-z]+" placeholder="영문 교사용 코드" required /></label>{error && <p role="alert">{error}</p>}<button className="primary-button" type="submit" disabled={busy || !code}>{busy ? "확인 중" : "입장"}</button></form></main>;
   return <><div className="teacher-auth-bar"><button className="secondary-button" type="button" onClick={() => { const auth = locationAuth(); if (auth) void signOut(auth); }}>교사 로그아웃</button></div>{children}</>;
 }
