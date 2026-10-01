@@ -528,7 +528,7 @@ function CourseEditor({
         <input
           value={place.name}
           onChange={(event) => updatePlace(setter, index, event.target.value)}
-          placeholder={index === 0 ? "10:30 광장" : index === 1 ? "11:00 박물관" : "12:00 카페"}
+          placeholder={index === 0 ? "예: 10:30 광장" : index === 1 ? "예: 11:00 박물관" : "예: 12:00 카페"}
           aria-label={`${index + 1}번째 시간과 장소`}
         />
         <button
@@ -549,7 +549,7 @@ function CourseEditor({
       <div>
         <p className="eyebrow">{session.classNo}반 {session.groupNo}모둠</p>
         <h2>코스 입력</h2>
-        <p className="course-hint">첫 장소는 출발지 · 시간 선택</p>
+        <p className="course-hint">첫 장소는 출발지 · 시간은 생략 가능</p>
       </div>
 
       {onCancel && (
