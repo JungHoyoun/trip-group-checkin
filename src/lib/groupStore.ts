@@ -8,7 +8,6 @@ import {
   getDoc,
   getDocs,
   getFirestore,
-  onSnapshot,
   runTransaction,
   setDoc,
   type Firestore,
@@ -187,7 +186,7 @@ function createFirebaseStore(db: Firestore, event: LearningEvent): GroupStore {
 }
 
 let cachedDb: Firestore | null = null;
-export function getDb() {
+function getDb() {
   if (!hasFirebaseConfig()) return null;
   if (!cachedDb) {
     cachedDb = getFirestore(initializeApp(firebaseConfig));
@@ -200,23 +199,6 @@ export function getDb() {
     }
   }
   return cachedDb;
-}
-
-export function watchEvent(eventId: string, next: (event: LearningEvent | null) => void, error: () => void) {
-  if (!validEventId(eventId)) return null;
-  const db = getDb();
-  if (!db) return null;
-  return onSnapshot(doc(db, "events", eventId), snapshot => next(snapshot.exists() && !snapshot.data().deletedAt ? { ...snapshot.data(), id: snapshot.id } as LearningEvent : null), error);
-}
-export function watchGroup(eventId: string, id: string, next: (group: GroupRecord | null) => void, error: () => void) {
-  const db = getDb();
-  if (!db) return null;
-  return onSnapshot(doc(db, "events", eventId, "groups", id), snapshot => next(snapshot.exists() ? normalizeGroup(snapshot.data() as GroupRecord) : null), error);
-}
-export function watchGroups(event: LearningEvent, next: (groups: GroupRecord[]) => void, error: () => void) {
-  const db = getDb();
-  if (!db) return null;
-  return onSnapshot(collection(db, "events", event.id, "groups"), snapshot => next(snapshot.docs.map(item => normalizeGroup(item.data() as GroupRecord)).filter(group => validGroup(event, group.classNo, group.groupNo))), error);
 }
 
 export interface EventStore {
