@@ -640,3 +640,10 @@ button:focus-visible {
 .topbar-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-shrink: 0; }
 .event-record-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .event-record-actions .secondary-button, .event-record-actions .danger-button { width: auto; }
+
+.event-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; margin: 18px 0 12px; }
+.event-heading .event-title { flex: 1 1 200px; margin: 0; font-size: 30px; line-height: 1.2; }
+.event-heading .event-record-actions { flex-shrink: 0; }
+@media (max-width: 640px) {
+  .event-heading .event-title { font-size: 28px; }
+}

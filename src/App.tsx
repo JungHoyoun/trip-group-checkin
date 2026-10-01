@@ -923,7 +923,24 @@ function EventDashboard({ event }: { event: LearningEvent }) {
       </header>
 
       <ModeBanner mode={store.mode} />
-      <h2 className="event-title">{event.name}</h2>
+      <div className="event-heading">
+        <h2 className="event-title">{event.name}</h2>
+        <div className="event-record-actions" role="group" aria-label="행사 도구">
+
+        {!event.isExample && <button className="secondary-button" type="button" onClick={async () => {
+          try { await navigator.clipboard.writeText(`${window.location.origin}/?event=${encodeURIComponent(event.id)}`); setAdminNotice("학생용 링크를 복사했습니다."); }
+          catch { setAdminNotice(`학생용 링크: ${window.location.origin}/?event=${encodeURIComponent(event.id)}`); }
+        }}>학생용 링크 복사</button>}
+        {!event.isExample && <button className="danger-button" type="button" disabled={loading} onClick={resetDatabase}>
+          <Trash2 size={18} />
+          초기화
+        </button>}
+        <button className="secondary-button" type="button" onClick={downloadCsv}>
+          <Download size={18} />
+          CSV
+        </button>
+        </div>
+      </div>
       {event.isExample && <span className="readonly-badge">보기 전용 예시</span>}
       {adminNotice && <div className="notice" role="status">{adminNotice}</div>}
 
@@ -943,20 +960,7 @@ function EventDashboard({ event }: { event: LearningEvent }) {
             </button>
           ))}
         </div>
-        <div className="event-record-actions" role="group" aria-label="행사 도구">
-        <button className="secondary-button" type="button" onClick={downloadCsv}>
-          <Download size={18} />
-          CSV
-        </button>
-        {!event.isExample && <button className="secondary-button" type="button" onClick={async () => {
-          try { await navigator.clipboard.writeText(`${window.location.origin}/?event=${encodeURIComponent(event.id)}`); setAdminNotice("학생용 링크를 복사했습니다."); }
-          catch { setAdminNotice(`학생용 링크: ${window.location.origin}/?event=${encodeURIComponent(event.id)}`); }
-        }}>학생용 링크 복사</button>}
-        {!event.isExample && <button className="danger-button" type="button" disabled={loading} onClick={resetDatabase}>
-          <Trash2 size={18} />
-          초기화
-        </button>}
-        </div>
+
       </div>
 
       <section className="group-grid">
