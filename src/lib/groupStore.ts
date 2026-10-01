@@ -1,6 +1,7 @@
 import { initializeApp } from "firebase/app";
 import {
   collection,
+  connectFirestoreEmulator,
   deleteDoc,
   doc,
   enableIndexedDbPersistence,
@@ -11,11 +12,12 @@ import {
   setDoc,
   type Firestore,
 } from "firebase/firestore";
-import type { CourseInputPlace, GroupAction, GroupRecord } from "../types";
-import { applyGroupAction, reconcileGroupProgress, updateGroupCourse } from "./groupLogic";
+import type { CourseInputPlace, GroupAction, GroupRecord, LearningEvent, EventInput } from "../types";
+import { createClientActionId, applyGroupAction, reconcileGroupProgress, updateGroupCourse } from "./groupLogic";
 
-const GROUPS_COLLECTION = "groups";
-const LOCAL_GROUPS_KEY = "trip-checkin-v4-local-groups";
+import { eventStorageKey, validGroup, validateEventInput, validEventId } from "./eventLogic";
+
+const LOCAL_EVENTS_KEY = "trip-checkin-v5-events";
 
 export interface GroupStore {
   mode: "firebase" | "local";
@@ -64,8 +66,8 @@ function normalizeGroup(group: GroupRecord): GroupRecord {
   });
 }
 
-function readLocalGroups(): Record<string, GroupRecord> {
-  const raw = localStorage.getItem(LOCAL_GROUPS_KEY);
+function readLocalGroups(key: string): Record<string, GroupRecord> {
+  const raw = localStorage.getItem(key);
 
   if (!raw) {
     return {};
@@ -78,29 +80,30 @@ function readLocalGroups(): Record<string, GroupRecord> {
   }
 }
 
-function writeLocalGroups(groups: Record<string, GroupRecord>) {
-  localStorage.setItem(LOCAL_GROUPS_KEY, JSON.stringify(groups));
+function writeLocalGroups(key: string, groups: Record<string, GroupRecord>) {
+  localStorage.setItem(key, JSON.stringify(groups));
 }
 
-function createLocalStore(): GroupStore {
+function createLocalStore(event: LearningEvent): GroupStore {
+  const key = eventStorageKey(event.id, "groups");
   return {
     mode: "local",
     async getGroup(id) {
-      return readLocalGroups()[id] ?? null;
+      return readLocalGroups(key)[id] ?? null;
     },
     async listGroups() {
-      return Object.values(readLocalGroups());
+      return Object.values(readLocalGroups(key));
     },
     async saveGroup(group) {
-      const groups = readLocalGroups();
+      const groups = readLocalGroups(key);
       groups[group.id] = normalizeGroup(group);
-      writeLocalGroups(groups);
+      writeLocalGroups(key, groups);
     },
     async clearAllGroups() {
-      localStorage.removeItem(LOCAL_GROUPS_KEY);
+      localStorage.removeItem(key);
     },
     async updateCourse(id, courseInput) {
-      const groups = readLocalGroups();
+      const groups = readLocalGroups(key);
       const current = groups[id];
 
       if (!current) {
@@ -109,11 +112,11 @@ function createLocalStore(): GroupStore {
 
       const next = normalizeGroup(updateGroupCourse(normalizeGroup(current), courseInput));
       groups[id] = next;
-      writeLocalGroups(groups);
+      writeLocalGroups(key, groups);
       return next;
     },
     async applyAction(action) {
-      const groups = readLocalGroups();
+      const groups = readLocalGroups(key);
       const current = groups[action.id];
 
       if (!current) {
@@ -122,32 +125,33 @@ function createLocalStore(): GroupStore {
 
       const next = normalizeGroup(applyGroupAction(current, action));
       groups[action.id] = next;
-      writeLocalGroups(groups);
+      writeLocalGroups(key, groups);
       return next;
     },
   };
 }
 
-function createFirebaseStore(db: Firestore): GroupStore {
+function createFirebaseStore(db: Firestore, event: LearningEvent): GroupStore {
+  const groups = collection(db, "events", event.id, "groups");
   return {
     mode: "firebase",
     async getGroup(id) {
-      const snapshot = await getDoc(doc(db, GROUPS_COLLECTION, id));
+      const snapshot = await getDoc(doc(groups, id));
       return snapshot.exists() ? normalizeGroup(snapshot.data() as GroupRecord) : null;
     },
     async listGroups() {
-      const snapshot = await getDocs(collection(db, GROUPS_COLLECTION));
+      const snapshot = await getDocs(groups);
       return snapshot.docs.map((item) => normalizeGroup(item.data() as GroupRecord));
     },
     async saveGroup(group) {
-      await setDoc(doc(db, GROUPS_COLLECTION, group.id), normalizeGroup(group));
+      await setDoc(doc(groups, group.id), normalizeGroup(group));
     },
     async clearAllGroups() {
-      const snapshot = await getDocs(collection(db, GROUPS_COLLECTION));
+      const snapshot = await getDocs(groups);
       await Promise.all(snapshot.docs.map((item) => deleteDoc(item.ref)));
     },
     async updateCourse(id, courseInput) {
-      const ref = doc(db, GROUPS_COLLECTION, id);
+      const ref = doc(groups, id);
 
       return runTransaction(db, async (transaction) => {
         const snapshot = await transaction.get(ref);
@@ -163,7 +167,7 @@ function createFirebaseStore(db: Firestore): GroupStore {
       });
     },
     async applyAction(action) {
-      const ref = doc(db, GROUPS_COLLECTION, action.id);
+      const ref = doc(groups, action.id);
 
       return runTransaction(db, async (transaction) => {
         const snapshot = await transaction.get(ref);
@@ -181,25 +185,72 @@ function createFirebaseStore(db: Firestore): GroupStore {
   };
 }
 
-let cachedStore: GroupStore | null = null;
-
-export function getGroupStore(): GroupStore {
-  if (cachedStore) {
-    return cachedStore;
+let cachedDb: Firestore | null = null;
+function getDb() {
+  if (!hasFirebaseConfig()) return null;
+  if (!cachedDb) {
+    cachedDb = getFirestore(initializeApp(firebaseConfig));
+    const emulatorHost = import.meta.env.DEV ? import.meta.env.VITE_FIRESTORE_EMULATOR_HOST : null;
+    if (emulatorHost && firebaseConfig.projectId.startsWith("demo-")) {
+      const [host, port] = emulatorHost.split(":");
+      connectFirestoreEmulator(cachedDb, host, Number(port));
+    } else {
+      enableIndexedDbPersistence(cachedDb).catch(() => {});
+    }
   }
+  return cachedDb;
+}
 
-  if (!hasFirebaseConfig()) {
-    cachedStore = createLocalStore();
-    return cachedStore;
-  }
+export interface EventStore {
+  mode: "firebase" | "local";
+  listEvents(): Promise<LearningEvent[]>;
+  getEvent(id: string): Promise<LearningEvent | null>;
+  createEvent(input: EventInput): Promise<LearningEvent>;
+}
 
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
+function readLocalEvents(): Record<string, LearningEvent> {
+  try { return JSON.parse(localStorage.getItem(LOCAL_EVENTS_KEY) ?? "{}"); }
+  catch { return {}; }
+}
 
-  enableIndexedDbPersistence(db).catch(() => {
-    // Persistence can fail in private windows or multiple tabs; normal reads/writes still work.
-  });
+export function getEventStore(): EventStore {
+  const db = getDb();
+  return {
+    mode: db ? "firebase" : "local",
+    async listEvents() {
+      const events = db ? (await getDocs(collection(db, "events"))).docs.map(item => ({ ...item.data(), id: item.id } as LearningEvent)) : Object.values(readLocalEvents());
+      return events.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    },
+    async getEvent(id) {
+      if (!validEventId(id)) return null;
+      if (!db) return readLocalEvents()[id] ?? null;
+      const snapshot = await getDoc(doc(db, "events", id));
+      return snapshot.exists() ? { ...snapshot.data(), id: snapshot.id } as LearningEvent : null;
+    },
+    async createEvent(input) {
+      const event: LearningEvent = { ...validateEventInput(input), id: createClientActionId(), createdAt: new Date().toISOString(), isExample: false };
+      if (db) await setDoc(doc(db, "events", event.id), event);
+      else localStorage.setItem(LOCAL_EVENTS_KEY, JSON.stringify({ ...readLocalEvents(), [event.id]: event }));
+      return event;
+    },
+  };
+}
 
-  cachedStore = createFirebaseStore(db);
-  return cachedStore;
+export function getGroupStore(event: LearningEvent): GroupStore {
+  const db = getDb();
+  const store = db ? createFirebaseStore(db, event) : createLocalStore(event);
+  const checkId = (id: string) => {
+    const [classNo, groupNo] = id.split("-").map(Number);
+    if (id !== `${classNo}-${groupNo}` || !validGroup(event, classNo, groupNo)) throw new Error("행사에 없는 반 또는 모둠입니다.");
+  };
+  const checkWrite = () => { if (event.isExample) throw new Error("예시 체험학습은 보기 전용입니다."); };
+  return {
+    mode: store.mode,
+    getGroup(id) { checkId(id); return store.getGroup(id); },
+    listGroups() { return store.listGroups(); },
+    saveGroup(group) { checkWrite(); checkId(group.id); if (group.id !== `${group.classNo}-${group.groupNo}`) throw new Error("모둠 정보가 일치하지 않습니다."); return store.saveGroup(group); },
+    clearAllGroups() { checkWrite(); return store.clearAllGroups(); },
+    updateCourse(id, input) { checkWrite(); checkId(id); return store.updateCourse(id, input); },
+    applyAction(action) { checkWrite(); checkId(action.id); if (action.eventId !== event.id || action.id !== `${action.classNo}-${action.groupNo}`) throw new Error("행사 또는 모둠이 일치하지 않습니다."); return store.applyAction(action); },
+  };
 }

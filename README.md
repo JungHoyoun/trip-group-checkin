@@ -1,37 +1,61 @@
 # 체험학습 일정관리
 
-학생 모둠장이 휴대폰으로 코스를 입력하고 출발/도착을 기록하면, 교사가 반별 탭에서 20개 모둠의 현재 위치와 지연 여부를 확인하는 웹앱입니다.
+교사가 체험학습과 반별 모둠 수를 만들고 학생용 링크를 공유합니다. 학생이 장소·선택 시간을 입력하고 출발/도착을 기록하면 교사가 해당 행사의 대시보드에서 확인합니다.
 
-## 실행
+## 사용 흐름
+
+- `/admin`: 기존 관리자 입력(`admin`) → 체험학습 목록 → 새 체험학습 또는 행사 선택.
+- 행사 이름, 반 수, 기본 모둠 수를 입력하고 반별 모둠 수를 조정합니다. 개수는 1~30이며 생성 후 구성은 수정하지 않습니다.
+- `/admin?event=<ID>`: 선택한 행사의 반 탭, 모둠 현황, CSV, 학생용 링크 복사, 해당 행사만 초기화.
+- `/?event=<ID>`: 해당 행사의 학생 입력. 링크 없는 접속에는 교사의 공유 링크를 안내합니다.
+- 시간 입력은 `10:30 광장`, `10:30 / 광장`, `10:30 - 광장` 등을 인식하며 장소만 입력해도 됩니다. 시간 초과 지연 판정은 없습니다.
+- 예시 체험학습은 익명·보기 전용입니다. 학생 입력 및 모든 데이터 변경을 차단합니다.
+
+## 로컬 실행과 테스트
 
 ```bash
 npm install
 npm run dev
+node --test tests/*.test.mjs
+npm run build
 ```
 
-## Firebase 설정
+`.env.example`의 Firebase 설정이 없으면 행사별로 분리된 localStorage를 사용합니다. 이 경우 다른 기기와 공유되지 않습니다.
 
-1. Firebase 콘솔에서 새 프로젝트를 만듭니다.
-2. Firestore Database를 생성합니다.
-3. 웹 앱을 추가하고 설정값을 복사합니다.
-4. `.env.example`을 참고해 `.env`를 만듭니다.
+Firestore 규칙 테스트는 Java 21 이상과 Firebase CLI가 필요합니다.
 
-```env
-VITE_FIREBASE_API_KEY=
-VITE_FIREBASE_AUTH_DOMAIN=
-VITE_FIREBASE_PROJECT_ID=
-VITE_FIREBASE_STORAGE_BUCKET=
-VITE_FIREBASE_MESSAGING_SENDER_ID=
-VITE_FIREBASE_APP_ID=
+```bash
+npx --yes firebase-tools emulators:start --only firestore --project demo-trip-checkin
 ```
 
-환경값이 없으면 앱은 브라우저 localStorage에만 저장됩니다. 화면 확인용으로는 쓸 수 있지만, 여러 기기 실시간 공유는 Firebase 설정 후 동작합니다.
+다른 터미널에서 `FIRESTORE_EMULATOR_HOST=127.0.0.1:8088` 환경변수를 지정한 뒤 테스트를 실행합니다. 이 환경변수가 없으면 규칙 통합 테스트만 건너뜁니다. 테스트 앱은 Firebase 환경값의 프로젝트 ID를 `demo-trip-checkin`으로 지정하고 `VITE_FIRESTORE_EMULATOR_HOST=127.0.0.1:8088`을 설정합니다. 에뮬레이터 연결은 개발 모드의 `demo-` 프로젝트에서만 허용합니다.
 
-## Firestore 규칙
+## 데이터와 규칙
 
-하루 행사 운영을 전제로 인증 없이 읽기/쓰기를 허용하는 예시 규칙을 `firestore.rules`에 넣었습니다. 실제 운영이 끝나면 Firestore를 비활성화하거나 규칙을 닫아두는 것을 권장합니다.
+- `events/{ID}`: 행사 이름, 반별 모둠 수, 생성 시각, 예시 여부.
+- `events/{ID}/groups/{반-모둠}`: 행사별 코스와 체크인 기록.
+- 학생 세션·마지막 선택·오프라인 기록은 행사 ID를 포함한 v5 키로 분리합니다. 이전 v4 기록을 새 행사로 자동 전송하지 않습니다.
+- Firestore 규칙은 행사 구성 범위를 검증하고, 예시의 수정·삭제 및 행사 구성 변경을 거부합니다.
+- 기존 최상위 `groups`는 이전 원본으로 유지하되 전환 후 쓰기를 막습니다.
+- 관리자 입력은 기존 화면 진입 방식이며 교사 계정 인증 시스템은 이번 변경에 포함하지 않습니다.
 
-## 배포
+## 기존 데이터 이전과 배포
 
-Vercel에 연결한 뒤 위 Firebase 환경값을 Vercel Project Settings의 Environment Variables에 추가합니다. `/admin` 직접 접속을 위해 `vercel.json`에 SPA rewrite가 포함되어 있습니다.
+1. Firebase 프로젝트 접근 계정으로 `npx --yes firebase-tools login`을 실행합니다.
+2. 최신 원본을 별도 백업한 뒤 `npx --yes firebase-tools deploy --only firestore:rules --project fieldtrip-1e75c`로 새 규칙을 적용합니다. 기존 클라이언트의 쓰기는 이 시점부터 중단됩니다.
+3. 아래 준비 명령을 다시 실행해 최종 원본과 복원 계획을 저장합니다. 출력 경로는 PC의 `Backups/trip-group-checkin`이며 원본 JSON과 복원 계획은 Git·Drive에 포함하지 않습니다.
 
+```bash
+node scripts/migrate-events.mjs --prepare --backup <기존_20개_모둠_JSON_절대경로>
+```
+
+4. 관리 권한의 OAuth 액세스 토큰을 프로세스 환경변수 `GOOGLE_OAUTH_ACCESS_TOKEN`에만 설정하고, 출력된 복원 계획으로 적용합니다. 토큰을 파일이나 로그에 기록하지 않습니다.
+
+```bash
+node scripts/migrate-events.mjs --apply --manifest <복원_계획_JSON_절대경로>
+```
+
+복원 도구는 기존 행사를 덮어쓰지 않으며, 예시 이름만 익명화하고 코스·예정 시간·체크인 기록·과거 시각을 유지합니다. 복원 후 전체 문서 값을 검증합니다. 중간 실패 시 이미 만든 행사를 삭제하지 말고 관리자 권한으로 누락 문서를 점검합니다.
+
+5. 운영 예시의 공개 읽기와 변경 거부, 이전 원본과 기존 행사의 일치를 확인합니다.
+6. 검증된 브랜치를 `main`에 반영해 Vercel을 배포합니다. Firebase 규칙과 복원 검증이 끝나기 전에는 운영 웹을 배포하지 않습니다. Vercel의 기존 Firebase 환경값과 SPA rewrite는 유지합니다.

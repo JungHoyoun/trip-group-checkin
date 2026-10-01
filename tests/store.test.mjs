@@ -1,0 +1,65 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import ts from "typescript";
+const compile = source => `data:text/javascript;base64,${Buffer.from(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ES2022 } }).outputText).toString("base64")}`;
+const logicUrl = compile(await readFile(new URL("../src/lib/groupLogic.ts", import.meta.url), "utf8"));
+const eventUrl = compile(await readFile(new URL("../src/lib/eventLogic.ts", import.meta.url), "utf8"));
+const storeSource = (await readFile(new URL("../src/lib/groupStore.ts", import.meta.url), "utf8"))
+  .replace(/import\.meta\.env/g, "({})")
+  .replace('"./groupLogic"', JSON.stringify(logicUrl)).replace('"./eventLogic"', JSON.stringify(eventUrl))
+  .replace('"firebase/app"', JSON.stringify(import.meta.resolve("firebase/app")))
+  .replace('"firebase/firestore"', JSON.stringify(import.meta.resolve("firebase/firestore")));
+const { getEventStore, getGroupStore } = await import(compile(storeSource));
+const logic = await import(logicUrl);
+const data = new Map();
+globalThis.localStorage = { getItem: key => data.get(key) ?? null, setItem: (key, value) => data.set(key, value), removeItem: key => data.delete(key) };
+const initial = () => logic.createInitialGroup({ classNo: 1, groupNo: 1, leaderName: "테스트", places: [{ placeId: "a", name: "10:30 출발지" }, { placeId: "b", name: "11:00 광장" }] });
+
+test("identical group IDs, updates and resets remain isolated by event", async () => {
+  const events = getEventStore();
+  const a = await events.createEvent({ name: "A", classGroupCounts: [2, 4] });
+  const b = await events.createEvent({ name: "B", classGroupCounts: [1] });
+  const storeA = getGroupStore(a), storeB = getGroupStore(b);
+  await storeA.saveGroup(initial()); await storeB.saveGroup(initial());
+  await storeA.updateCourse("1-1", { places: [{ placeId: "a", name: "A 출발지" }, { placeId: "b", name: "A 광장" }] });
+  assert.equal((await storeB.getGroup("1-1")).course[0].name, "출발지");
+  await storeA.clearAllGroups();
+  assert.equal((await storeA.listGroups()).length, 0);
+  assert.equal((await storeB.listGroups()).length, 1);
+  assert.equal((await events.listEvents()).length, 2);
+  assert.equal((await events.getEvent(a.id)).name, "A");
+  assert.equal(await events.getEvent("missing"), null);
+});
+
+test("store rejects invalid group IDs and cross-event queued actions", async () => {
+  const event = await getEventStore().createEvent({ name: "C", classGroupCounts: [1] });
+  const store = getGroupStore(event);
+  for (const id of ["1-2", "2-1", "01-1", "1-1/other"]) assert.throws(() => store.getGroup(id));
+  await store.saveGroup(initial());
+  assert.throws(() => store.applyAction({ eventId: "other", id: "1-1", classNo: 1, groupNo: 1, type: "depart", clientAt: new Date().toISOString(), clientActionId: "wrong" }));
+});
+
+test("example store blocks every mutation", () => {
+  const store = getGroupStore({ id: "example", name: "예시", classGroupCounts: [4, 4, 4, 4, 4], createdAt: "2026-01-01", isExample: true });
+  assert.throws(() => store.saveGroup(initial()), /보기 전용/);
+  assert.throws(() => store.clearAllGroups(), /보기 전용/);
+  assert.throws(() => store.updateCourse("1-1", { places: [] }), /보기 전용/);
+  assert.throws(() => store.applyAction({ eventId: "example", id: "1-1" }), /보기 전용/);
+});
+
+test("replaying an offline action cannot duplicate its history", () => {
+  const action = { eventId: "event", id: "1-1", classNo: 1, groupNo: 1, type: "depart", clientAt: new Date().toISOString(), clientActionId: "once" };
+  const group = logic.applyGroupAction(initial(), action);
+  assert.deepEqual(logic.applyGroupAction(group, action), group);
+});
+
+test("replaying offline undo cannot remove an extra history entry", () => {
+  const depart = { eventId: "event", id: "1-1", classNo: 1, groupNo: 1, type: "depart", clientAt: "2026-10-01T10:00:00Z", clientActionId: "depart" };
+  let group = logic.applyGroupAction(initial(), depart);
+  group = logic.applyGroupAction(group, { ...depart, type: "arrive", clientAt: "2026-10-01T11:00:00Z", clientActionId: "arrive" });
+  const undo = { ...depart, type: "undo", clientAt: "2026-10-01T12:00:00Z", clientActionId: "undo" };
+  const undone = logic.applyGroupAction(group, undo);
+  assert.equal(undone.history.length, 1);
+  assert.deepEqual(logic.applyGroupAction(undone, undo), undone);
+});

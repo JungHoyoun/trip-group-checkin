@@ -13,8 +13,8 @@ import {
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import type { CourseInputPlace, GroupAction, GroupRecord } from "./types";
-import { APP_NAME, CLASS_NUMBERS, GROUP_NUMBERS, STATUS_LABELS } from "./lib/constants";
+import type { CourseInputPlace, GroupAction, GroupRecord, LearningEvent, EventInput } from "./types";
+import { APP_NAME, STATUS_LABELS } from "./lib/constants";
 import {
   applyGroupAction,
   createClientActionId,
@@ -28,21 +28,23 @@ import {
   getNextAction,
   getNextPlaceName,
 } from "./lib/groupLogic";
-import { getGroupStore } from "./lib/groupStore";
+import { getEventStore, getGroupStore } from "./lib/groupStore";
+import { eventStorageKey, numbers, validGroup, validateEventInput } from "./lib/eventLogic";
 
 interface StudentSession {
+  eventId: string;
   classNo: number;
   groupNo: number;
   leaderName: string;
 }
 
-const STORAGE_VERSION = "v4";
-const SESSION_KEY = `trip-checkin-${STORAGE_VERSION}-student-session`;
-const LAST_STUDENT_KEY = `trip-checkin-${STORAGE_VERSION}-last-student`;
-const ADMIN_KEY = `trip-checkin-${STORAGE_VERSION}-admin-ok`;
+const EVENT_ID = new URLSearchParams(window.location.search).get("event");
+const SESSION_KEY = eventStorageKey(EVENT_ID ?? "none", "student-session");
+const LAST_STUDENT_KEY = eventStorageKey(EVENT_ID ?? "none", "last-student");
+const ADMIN_KEY = "trip-checkin-v4-admin-ok";
 
 function pendingKey(groupId: string) {
-  return `trip-checkin-${STORAGE_VERSION}-pending-${groupId}`;
+  return eventStorageKey(EVENT_ID ?? "none", `pending-${groupId}`);
 }
 
 function readStudentSession(): StudentSession | null {
@@ -69,6 +71,7 @@ function readLastStudent(): StudentSession {
 
   if (!raw) {
     return {
+      eventId: EVENT_ID ?? "",
       classNo: 1,
       groupNo: 1,
       leaderName: "",
@@ -79,6 +82,7 @@ function readLastStudent(): StudentSession {
     return JSON.parse(raw) as StudentSession;
   } catch {
     return {
+      eventId: EVENT_ID ?? "",
       classNo: 1,
       groupNo: 1,
       leaderName: "",
@@ -136,7 +140,7 @@ function App() {
 
   return (
     <div className="app-shell">
-      {isAdmin ? <AdminPage /> : <StudentPage />}
+      {isAdmin ? <AdminHome /> : <StudentEntry />}
     </div>
   );
 }
@@ -153,12 +157,106 @@ function ModeBanner({ mode }: { mode: "firebase" | "local" }) {
   );
 }
 
-function StudentPage() {
-  const store = useMemo(() => getGroupStore(), []);
-  const [session, setSession] = useState<StudentSession | null>(() => readStudentSession());
+function StudentEntry() {
+  const store = useMemo(() => getEventStore(), []);
+  const [event, setEvent] = useState<LearningEvent | null>(null);
+  const [loading, setLoading] = useState(Boolean(EVENT_ID));
+  const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    if (!EVENT_ID) return;
+    let cancelled = false;
+    setLoading(true); setError("");
+    store.getEvent(EVENT_ID).then(value => { if (!cancelled) setEvent(value); })
+      .catch(() => { if (!cancelled) setError("행사를 불러오지 못했습니다. 연결을 확인해 주세요."); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [store, attempt]);
+  if (event && !event.isExample && !loading && !error) return <StudentPage event={event} />;
+  return <main className="page"><h1>{APP_NAME}</h1><div className="panel empty-state">
+    {loading ? "불러오는 중" : error || (!EVENT_ID ? "교사가 공유한 링크로 접속해 주세요." : !event ? "찾을 수 없는 체험학습입니다. 교사에게 링크를 확인해 주세요." : "예시 체험학습은 보기 전용입니다.")}
+    {error && <button className="secondary-button" onClick={() => setAttempt(value => value + 1)}>다시 시도</button>}
+    {event?.isExample && <p><a href={`/admin?event=${encodeURIComponent(event.id)}`}>예시 대시보드 보기</a></p>}
+  </div></main>;
+}
+
+function AdminHome() {
+  const store = useMemo(() => getEventStore(), []);
+  const [authed, setAuthed] = useState(() => localStorage.getItem(ADMIN_KEY) === "true");
+  const [events, setEvents] = useState<LearningEvent[]>([]);
+  const [creating, setCreating] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const load = useCallback(async () => {
+    setLoading(true); setError("");
+    try { setEvents(await store.listEvents()); }
+    catch { setError("체험학습을 불러오지 못했습니다. 연결을 확인해 주세요."); }
+    finally { setLoading(false); }
+  }, [store]);
+  useEffect(() => { if (authed) void load(); }, [authed, load]);
+  if (!authed) return <AdminLogin onLogin={value => {
+    if (value.trim() === "admin") { localStorage.setItem(ADMIN_KEY, "true"); setAuthed(true); }
+  }} />;
+  const event = events.find(item => item.id === EVENT_ID);
+  if (EVENT_ID && event && !loading && !error) return <EventDashboard event={event} />;
+  return <main className="page admin-page">
+    <header className="topbar"><div><p className="eyebrow">교사</p><h1>{APP_NAME}</h1></div></header>
+    <ModeBanner mode={store.mode} />
+    {error && <div className="notice" role="alert">{error}<button className="secondary-button" onClick={() => void load()}>다시 시도</button></div>}
+    {loading ? <div className="loading-box">불러오는 중</div> : EVENT_ID ? <div className="panel empty-state">찾을 수 없는 체험학습입니다. <a href="/admin">행사 목록</a></div> : <>
+      <div className="event-toolbar"><button className="secondary-button" onClick={() => setCreating(value => !value)}><Plus size={18} />{creating ? "생성 취소" : "새 체험학습"}</button></div>
+      {creating && <CreateEventForm onCreate={input => store.createEvent(input).then(created => { window.location.assign(`/admin?event=${encodeURIComponent(created.id)}`); })} />}
+      <div className="event-list">{events.map(item => <button key={item.id} className="panel event-card" onClick={() => window.location.assign(`/admin?event=${encodeURIComponent(item.id)}`)}>
+        <div>{item.isExample && <span className="readonly-badge">보기 전용 예시</span>}<h2>{item.name}</h2><p className="muted">{item.classGroupCounts.length}개 반 · {item.classGroupCounts.reduce((sum, count) => sum + count, 0)}개 모둠</p></div><span aria-hidden="true">→</span>
+      </button>)}</div>
+      {!events.length && !error && <p className="empty-state">아직 체험학습이 없습니다. 새 체험학습을 만들어 시작하세요.</p>}
+    </>}
+  </main>;
+}
+
+function CreateEventForm({ onCreate }: { onCreate: (input: EventInput) => Promise<void> }) {
+  const [name, setName] = useState("");
+  const [classCount, setClassCount] = useState("5");
+  const [baseCount, setBaseCount] = useState("4");
+  const [counts, setCounts] = useState<string[]>(Array(5).fill("4"));
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const submit = async (formEvent: FormEvent) => {
+    formEvent.preventDefault(); setError("");
+    try {
+      if (!Number.isInteger(Number(classCount)) || Number(classCount) !== counts.length || !Number.isInteger(Number(baseCount)) || Number(baseCount) < 1 || Number(baseCount) > 30) throw new Error("반 수와 모둠 수는 1~30의 정수로 입력해 주세요.");
+      const input = validateEventInput({ name, classGroupCounts: counts.map(Number) });
+      setSaving(true); await onCreate(input);
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "생성하지 못했습니다. 다시 시도해 주세요."); }
+    finally { setSaving(false); }
+  };
+  return <form className="panel event-form" onSubmit={submit}>
+    <label>행사 이름<input value={name} onChange={e => setName(e.target.value)} placeholder="예: 가을 체험학습" maxLength={80} required disabled={saving} /></label>
+    <div className="field-row">
+      <label>반 수<input type="number" min={1} max={30} step={1} value={classCount} required disabled={saving} onChange={e => {
+        const value = e.target.value; setClassCount(value); const count = Number(value);
+        if (Number.isInteger(count) && count >= 1 && count <= 30) setCounts(old => Array.from({ length: count }, (_, index) => old[index] ?? baseCount));
+      }} /></label>
+      <label>기본 모둠 수<input type="number" min={1} max={30} step={1} value={baseCount} required disabled={saving} onChange={e => {
+        setBaseCount(e.target.value); const value = e.target.value; setCounts(old => old.map(() => value));
+      }} /></label>
+    </div>
+    <fieldset className="class-counts" disabled={saving}><legend>반별 모둠 수</legend>{counts.map((count, index) => <label key={index}>{index + 1}반<input type="number" min={1} max={30} step={1} value={count} required onChange={e => setCounts(old => old.map((value, i) => i === index ? e.target.value : value))} /></label>)}</fieldset>
+    {error && <div className="notice" role="alert">{error}</div>}
+    <button className="primary-button" type="submit" disabled={saving}>{saving ? "생성 중" : "체험학습 만들기"}</button>
+  </form>;
+}
+
+function StudentPage({ event }: { event: LearningEvent }) {
+  const store = useMemo(() => getGroupStore(event), [event]);
+  const [session, setSession] = useState<StudentSession | null>(() => {
+    const saved = readStudentSession();
+    return saved && saved.eventId === event.id && validGroup(event, saved.classNo, saved.groupNo) ? saved : null;
+  });
   const [group, setGroup] = useState<GroupRecord | null>(null);
   const [loading, setLoading] = useState(Boolean(session));
   const [editingCourse, setEditingCourse] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [pendingCount, setPendingCount] = useState(() => (session ? readPendingActions(getGroupId(session.classNo, session.groupNo)).length : 0));
   const [notice, setNotice] = useState("");
 
@@ -170,9 +268,13 @@ function StudentPage() {
     }
 
     setLoading(true);
+    setLoadFailed(false);
     try {
       const nextGroup = await store.getGroup(groupId);
       setGroup(nextGroup);
+    } catch (error) {
+      setLoadFailed(true);
+      throw error;
     } finally {
       setLoading(false);
     }
@@ -192,8 +294,14 @@ function StudentPage() {
 
     let latest: GroupRecord | null = null;
 
-    for (const action of pending) {
-      latest = await store.applyAction(action);
+    for (let index = 0; index < pending.length; index++) {
+      latest = await store.applyAction(pending[index]);
+      if (!latest) {
+        clearPendingActions(groupId);
+        setNotice("모둠 기록이 초기화되어 대기 중인 체크인을 종료했습니다. 코스를 다시 입력해 주세요.");
+        setGroup(null); setPendingCount(0); return;
+      }
+      writePendingActions(groupId, pending.slice(index + 1));
     }
 
     clearPendingActions(groupId);
@@ -212,7 +320,7 @@ function StudentPage() {
       return;
     }
 
-    loadGroup();
+    loadGroup().catch(() => setNotice("불러오지 못했습니다. 연결을 확인해 주세요."));
   }, [groupId, loadGroup]);
 
   useEffect(() => {
@@ -235,12 +343,13 @@ function StudentPage() {
       }
     };
 
-    const interval = window.setInterval(refresh, 5000);
-    window.addEventListener("online", flushPending);
+    const safeRefresh = () => { refresh().catch(() => setNotice("연결을 확인해 주세요. 저장된 입력은 유지됩니다.")); };
+    const interval = window.setInterval(safeRefresh, 5000);
+    window.addEventListener("online", safeRefresh);
 
     return () => {
       window.clearInterval(interval);
-      window.removeEventListener("online", flushPending);
+      window.removeEventListener("online", safeRefresh);
     };
   }, [flushPending, groupId, store]);
 
@@ -296,6 +405,7 @@ function StudentPage() {
 
     const action: GroupAction = {
       id: group.id,
+      eventId: event.id,
       classNo: session.classNo,
       groupNo: session.groupNo,
       type,
@@ -314,9 +424,10 @@ function StudentPage() {
     try {
       const savedGroup = await store.applyAction(action);
       if (savedGroup) {
-        setGroup(savedGroup);
+        setGroup(savedGroup); setNotice("");
+      } else {
+        setGroup(null); setNotice("모둠 기록이 초기화되었습니다. 코스를 다시 입력해 주세요.");
       }
-      setNotice("");
     } catch {
       queueAction(action);
     }
@@ -345,8 +456,10 @@ function StudentPage() {
       </header>
 
       <ModeBanner mode={store.mode} />
-
-      {!session && <StudentStartForm onSubmit={handleSession} />}
+      <h2 className="event-title">{event.name}</h2>
+      {notice && (!group || editingCourse || loadFailed) && <div className="notice" role="alert">{notice}</div>}
+      {loadFailed && <button className="secondary-button" onClick={() => { loadGroup().catch(() => setNotice("불러오지 못했습니다. 연결을 확인해 주세요.")); }}>다시 시도</button>}
+      {!session && <StudentStartForm event={event} onSubmit={handleSession} />}
 
       {session && loading && (
         <div className="loading-box">
@@ -355,7 +468,7 @@ function StudentPage() {
         </div>
       )}
 
-      {session && !loading && (!group || editingCourse) && (
+      {session && !loading && !loadFailed && (!group || editingCourse) && (
         <CourseEditor
           session={session}
           existingGroup={group}
@@ -387,20 +500,21 @@ function StudentPage() {
   );
 }
 
-function StudentStartForm({ onSubmit }: { onSubmit: (session: StudentSession) => void }) {
+function StudentStartForm({ event, onSubmit }: { event: LearningEvent; onSubmit: (session: StudentSession) => void }) {
   const lastStudent = useMemo(() => readLastStudent(), []);
-  const [classNo, setClassNo] = useState(lastStudent.classNo);
-  const [groupNo, setGroupNo] = useState(lastStudent.groupNo);
+  const [classNo, setClassNo] = useState(validGroup(event, lastStudent.classNo, lastStudent.groupNo) ? lastStudent.classNo : 1);
+  const [groupNo, setGroupNo] = useState(validGroup(event, lastStudent.classNo, lastStudent.groupNo) ? lastStudent.groupNo : 1);
   const [leaderName, setLeaderName] = useState(lastStudent.leaderName);
 
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
+  const submit = (formEvent: FormEvent) => {
+    formEvent.preventDefault();
 
-    if (!leaderName.trim()) {
+    if (!leaderName.trim() || !validGroup(event, classNo, groupNo)) {
       return;
     }
 
     onSubmit({
+      eventId: event.id,
       classNo,
       groupNo,
       leaderName: leaderName.trim(),
@@ -412,8 +526,8 @@ function StudentStartForm({ onSubmit }: { onSubmit: (session: StudentSession) =>
       <div className="field-row">
         <label>
           학급
-          <select value={classNo} onChange={(event) => setClassNo(Number(event.target.value))}>
-            {CLASS_NUMBERS.map((number) => (
+          <select value={classNo} onChange={(event) => { setClassNo(Number(event.target.value)); setGroupNo(1); }}>
+            {numbers(event.classGroupCounts.length).map((number) => (
               <option key={number} value={number}>
                 {number}반
               </option>
@@ -423,7 +537,7 @@ function StudentStartForm({ onSubmit }: { onSubmit: (session: StudentSession) =>
         <label>
           모둠
           <select value={groupNo} onChange={(event) => setGroupNo(Number(event.target.value))}>
-            {GROUP_NUMBERS.map((number) => (
+            {numbers(event.classGroupCounts[classNo - 1]).map((number) => (
               <option key={number} value={number}>
                 {number}모둠
               </option>
@@ -675,9 +789,8 @@ function HistoryList({ group }: { group: GroupRecord }) {
   );
 }
 
-function AdminPage() {
-  const store = useMemo(() => getGroupStore(), []);
-  const [authed, setAuthed] = useState(() => localStorage.getItem(ADMIN_KEY) === "true");
+function EventDashboard({ event }: { event: LearningEvent }) {
+  const store = useMemo(() => getGroupStore(event), [event]);
   const [groups, setGroups] = useState<GroupRecord[]>([]);
   const [selectedClass, setSelectedClass] = useState(1);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
@@ -685,40 +798,27 @@ function AdminPage() {
   const [adminNotice, setAdminNotice] = useState("");
 
   const loadGroups = useCallback(async () => {
-    if (!authed) {
-      return;
-    }
-
     setLoading(true);
     try {
       const nextGroups = await store.listGroups();
       setGroups(nextGroups);
+    } catch {
+      setAdminNotice("기록을 불러오지 못했습니다. 연결을 확인해 주세요.");
     } finally {
       setLoading(false);
     }
-  }, [authed, store]);
+  }, [store]);
 
   useEffect(() => {
     loadGroups();
   }, [loadGroups]);
 
   useEffect(() => {
-    if (!authed) {
-      return;
-    }
-
     const interval = window.setInterval(loadGroups, 5000);
     return () => window.clearInterval(interval);
-  }, [authed, loadGroups]);
+  }, [loadGroups]);
 
   const selectedGroup = selectedGroupId ? groups.find((group) => group.id === selectedGroupId) ?? null : null;
-
-  const login = (value: string) => {
-    if (value.trim() === "admin") {
-      localStorage.setItem(ADMIN_KEY, "true");
-      setAuthed(true);
-    }
-  };
 
   const downloadCsv = () => {
     const rows = [
@@ -743,13 +843,13 @@ function AdminPage() {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = "체험학습_일정관리_기록.csv";
+    anchor.download = `${event.name.replace(/[\\/:*?"<>|]/g, "_")}_기록.csv`;
     anchor.click();
     URL.revokeObjectURL(url);
   };
 
   const resetDatabase = async () => {
-    const confirmed = window.confirm("전체 모둠의 코스와 출발/도착 기록을 모두 초기화할까요?");
+    const confirmed = window.confirm(`${event.name}의 모둠 코스와 출발/도착 기록을 초기화할까요? 다른 행사는 유지됩니다.`);
 
     if (!confirmed) {
       return;
@@ -768,10 +868,6 @@ function AdminPage() {
     }
   };
 
-  if (!authed) {
-    return <AdminLogin onLogin={login} />;
-  }
-
   return (
     <main className="page admin-page">
       <header className="topbar">
@@ -785,11 +881,20 @@ function AdminPage() {
       </header>
 
       <ModeBanner mode={store.mode} />
-      {adminNotice && <div className="notice">{adminNotice}</div>}
+      <div className="event-toolbar">
+        <a className="secondary-button" href="/admin">행사 목록</a>
+        {!event.isExample && <button className="secondary-button" type="button" onClick={async () => {
+          try { await navigator.clipboard.writeText(`${window.location.origin}/?event=${encodeURIComponent(event.id)}`); setAdminNotice("학생용 링크를 복사했습니다."); }
+          catch { setAdminNotice(`학생용 링크: ${window.location.origin}/?event=${encodeURIComponent(event.id)}`); }
+        }}>학생용 링크 복사</button>}
+      </div>
+      <h2 className="event-title">{event.name}</h2>
+      {event.isExample && <span className="readonly-badge">보기 전용 예시</span>}
+      {adminNotice && <div className="notice" role="status">{adminNotice}</div>}
 
       <div className="admin-actions">
         <div className="tabs" role="tablist" aria-label="학급">
-          {CLASS_NUMBERS.map((classNo) => (
+          {numbers(event.classGroupCounts.length).map((classNo) => (
             <button
               key={classNo}
               className={classNames(selectedClass === classNo && "active")}
@@ -807,14 +912,14 @@ function AdminPage() {
           <Download size={18} />
           CSV
         </button>
-        <button className="danger-button" type="button" onClick={resetDatabase}>
+        {!event.isExample && <button className="danger-button" type="button" disabled={loading} onClick={resetDatabase}>
           <Trash2 size={18} />
-          DB 초기화
-        </button>
+          이 행사 기록 초기화
+        </button>}
       </div>
 
       <section className="group-grid">
-        {GROUP_NUMBERS.map((groupNo) => {
+        {numbers(event.classGroupCounts[selectedClass - 1]).map((groupNo) => {
           const id = getGroupId(selectedClass, groupNo);
           const group = groups.find((item) => item.id === id) ?? null;
           return (

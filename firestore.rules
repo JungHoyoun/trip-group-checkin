@@ -1,9 +1,70 @@
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
+    function validCount(counts, index) {
+      return index >= counts.size() || (counts[index] is int && counts[index] >= 1 && counts[index] <= 30);
+    }
+    function validEvent(data, eventId) {
+      let counts = data.classGroupCounts;
+      return data.keys().hasOnly(['id', 'name', 'classGroupCounts', 'createdAt', 'isExample'])
+        && eventId.matches("^[a-zA-Z0-9_-]{1,128}$") && data.id == eventId && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
+        && data.createdAt is string && data.isExample == false
+        && counts is list && counts.size() >= 1 && counts.size() <= 30
+        && validCount(counts, 0)
+        && validCount(counts, 1)
+        && validCount(counts, 2)
+        && validCount(counts, 3)
+        && validCount(counts, 4)
+        && validCount(counts, 5)
+        && validCount(counts, 6)
+        && validCount(counts, 7)
+        && validCount(counts, 8)
+        && validCount(counts, 9)
+        && validCount(counts, 10)
+        && validCount(counts, 11)
+        && validCount(counts, 12)
+        && validCount(counts, 13)
+        && validCount(counts, 14)
+        && validCount(counts, 15)
+        && validCount(counts, 16)
+        && validCount(counts, 17)
+        && validCount(counts, 18)
+        && validCount(counts, 19)
+        && validCount(counts, 20)
+        && validCount(counts, 21)
+        && validCount(counts, 22)
+        && validCount(counts, 23)
+        && validCount(counts, 24)
+        && validCount(counts, 25)
+        && validCount(counts, 26)
+        && validCount(counts, 27)
+        && validCount(counts, 28)
+        && validCount(counts, 29);
+    }
+    function writableEvent(eventId) {
+      return exists(/databases/$(database)/documents/events/$(eventId))
+        && get(/databases/$(database)/documents/events/$(eventId)).data.isExample == false;
+    }
+    function validGroup(eventId, groupId, data) {
+      let counts = get(/databases/$(database)/documents/events/$(eventId)).data.classGroupCounts;
+      return data.classNo is int && data.groupNo is int && data.classNo >= 1 && data.classNo <= counts.size()
+        && data.groupNo >= 1 && data.groupNo <= counts[data.classNo - 1]
+        && groupId == string(data.classNo) + '-' + string(data.groupNo) && data.id == groupId;
+    }
+    match /events/{eventId} {
+      allow read: if true;
+      allow create: if validEvent(request.resource.data, eventId);
+      allow update, delete: if false;
+      match /groups/{groupId} {
+        allow read: if exists(/databases/$(database)/documents/events/$(eventId));
+        allow create, update: if writableEvent(eventId) && validGroup(eventId, groupId, request.resource.data);
+        allow delete: if writableEvent(eventId);
+      }
+    }
+    // Retain the legacy source for review, but stop obsolete clients changing it after cutover.
     match /groups/{groupId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if false;
     }
   }
 }

@@ -39,10 +39,12 @@ export interface GroupRecord {
   history: HistoryEntry[];
   lastArrivalAt: string | null;
   lastActionAt: string | null;
+  lastClientActionId?: string | null;
   updatedAt: string | null;
 }
 
 export interface GroupAction {
+  eventId: string;
   id: string;
   classNo: number;
   groupNo: number;
@@ -51,7 +53,15 @@ export interface GroupAction {
   clientAt: string;
 }
 
-export interface DelayState {
-  isDelayed: boolean;
-  labels: string[];
+export interface LearningEvent {
+  id: string;
+  name: string;
+  classGroupCounts: number[];
+  createdAt: string;
+  isExample: boolean;
+}
+
+export interface EventInput {
+  name: string;
+  classGroupCounts: number[];
 }

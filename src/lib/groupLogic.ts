@@ -182,6 +182,7 @@ export function reconcileGroupProgress(group: GroupRecord): GroupRecord {
 }
 
 export function applyGroupAction(group: GroupRecord, action: GroupAction): GroupRecord {
+  if (group.lastClientActionId === action.clientActionId || group.history.some(entry => entry.clientActionId === action.clientActionId)) return group;
   if (group.lastActionAt) {
     const lastActionTime = Date.parse(group.lastActionAt);
     const nextActionTime = Date.parse(action.clientAt);
@@ -240,6 +241,7 @@ export function applyGroupAction(group: GroupRecord, action: GroupAction): Group
     currentIndex: progress.currentIndex,
     lastArrivalAt: progress.lastArrivalAt,
     lastActionAt: action.clientAt,
+    lastClientActionId: action.clientActionId,
     updatedAt: new Date().toISOString(),
   };
 }
