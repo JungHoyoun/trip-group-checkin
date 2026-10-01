@@ -1,4 +1,4 @@
-export const APP_NAME = "수학여행 모둠 체크인";
+export const APP_NAME = "체험학습 여정 설정";
 
 export const STATUS_LABELS = {
   ready: "출발 전",
