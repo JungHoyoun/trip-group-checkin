@@ -743,7 +743,7 @@ function AdminPage() {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = "체험학습_여정_기록.csv";
+    anchor.download = "체험학습_일정관리_기록.csv";
     anchor.click();
     URL.revokeObjectURL(url);
   };
