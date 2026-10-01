@@ -40,18 +40,25 @@ function LocationMap({ location, now }: { location: SharedLocation; now: number 
   const markers = useRef<Marker[]>([]);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState("");
+  const clearMarkers = () => {
+    markers.current.forEach(marker => {
+      // Authentication failure can cause the SDK to dispose markers itself.
+      try { marker.setMap(null); } catch { /* Already disposed by the SDK. */ }
+    });
+    markers.current = [];
+  };
   useEffect(() => {
     let active = true;
     loadMapSdk().then(maps => {
       if (!active || !container.current) return;
       sdk.current = maps;
       map.current = new maps.Map(container.current, { center: new maps.LatLng(location.latitude, location.longitude), zoom: 16, zoomControl: true });
-      window.navermap_authFailure = () => { if (active) setError("지도 인증에 실패했습니다. 네이버 콘솔의 등록 주소를 확인해 주세요."); };
+      window.navermap_authFailure = () => { if (active) { setReady(false); setError("지도 인증에 실패했습니다. 네이버 콘솔의 등록 주소를 확인해 주세요."); } };
       setReady(true);
     }).catch(error => { if (active) setError(error.message); });
     return () => {
       active = false;
-      markers.current.forEach(marker => marker.setMap(null));
+      clearMarkers();
       // The SDK may already destroy an unauthenticated map before React unmounts it.
       try { map.current?.destroy(); } catch { /* Already disposed by the SDK. */ }
       map.current = null;
@@ -60,16 +67,17 @@ function LocationMap({ location, now }: { location: SharedLocation; now: number 
   useEffect(() => {
     const maps = sdk.current, instance = map.current;
     if (!ready || !maps || !instance) return;
-    markers.current.forEach(marker => marker.setMap(null));
-    markers.current = [new maps.Marker({
+    clearMarkers();
+    try { markers.current = [new maps.Marker({
       map: instance, position: new maps.LatLng(location.latitude, location.longitude),
       title: `${location.classNo}반 ${location.groupNo}모둠 · ${locationLabel(location, now)}`,
       icon: { content: `<span class="location-pin${isStale(location, now) ? " stale" : ""}">${location.classNo}-${location.groupNo}</span>`, anchor: new maps.Point(25, 15) },
-    })];
+    })]; } catch { setReady(false); setError("지도를 표시하지 못했습니다. 네이버 지도 인증과 연결을 확인해 주세요."); }
   }, [location, now, ready]);
   const center = () => {
     if (!sdk.current || !map.current) return;
-    map.current.setCenter(new sdk.current.LatLng(location.latitude, location.longitude));
+    try { map.current.setCenter(new sdk.current.LatLng(location.latitude, location.longitude)); }
+    catch { setReady(false); setError("지도를 표시하지 못했습니다. 네이버 지도 인증과 연결을 확인해 주세요."); }
   };
   useEffect(() => { if (ready) center(); }, [ready, location.latitude, location.longitude]);
   return <><div className="location-heading"><p className="muted">{locationLabel(location, now)}{isStale(location, now) ? " · 갱신 없음" : ""}</p><button className="secondary-button" type="button" disabled={!ready} onClick={center}>위치로 이동</button></div>{error && <p role="alert">{error}</p>}<div ref={container} className="teacher-location-map" aria-label={`${location.classNo}반 ${location.groupNo}모둠 마지막 위치 지도`} /></>;
