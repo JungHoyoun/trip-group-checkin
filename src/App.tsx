@@ -11,6 +11,7 @@ import {
   Save,
   Trash2,
   Undo2,
+  X,
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
@@ -31,7 +32,6 @@ import {
 } from "./lib/groupLogic";
 import { getEventStore, getGroupStore, watchEvent, watchGroup, watchGroups } from "./lib/groupStore";
 import { eventStorageKey, numbers, validGroup, validateEventInput } from "./lib/eventLogic";
-
 import { LocationSharing } from "./components/LocationSharing";
 import { TeacherLocationMap } from "./components/TeacherLocationMap";
 import { TeacherGate } from "./components/TeacherGate";
@@ -212,7 +212,10 @@ function AdminHome() {
     finally { setDeleting(null); }
   };
   const event = events.find(item => item.id === EVENT_ID);
-  if (EVENT_ID && event && !loading && !error) return <EventDashboard event={event} />;
+  if (EVENT_ID && event && !loading && !error) return <EventDashboard event={event} onRename={async name => {
+    const updated = await store.renameEvent(event.id, name);
+    setEvents(old => old.map(item => item.id === updated.id ? updated : item));
+  }} />;
   return <main className="page admin-page">
     <header className="topbar"><div><p className="eyebrow">교사</p><h1>{APP_NAME}</h1></div></header>
     <ModeBanner mode={store.mode} />
@@ -861,7 +864,26 @@ function EventActionsMenu({ onDownload, onReset, loading }: { onDownload: () => 
   </details>;
 }
 
-function EventDashboard({ event }: { event: LearningEvent }) {
+function EventDashboard({ event, onRename }: { event: LearningEvent; onRename: (name: string) => Promise<void> }) {
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState(event.name);
+  const [nameSaving, setNameSaving] = useState(false);
+  const [nameError, setNameError] = useState("");
+  const beginRename = () => {
+    if (event.isExample) return;
+    setNameDraft(event.name); setNameError(""); setEditingName(true);
+  };
+  const saveName = async (formEvent: FormEvent) => {
+    formEvent.preventDefault();
+    if (nameSaving) return;
+    const name = nameDraft.trim();
+    if (!name || name.length > 80) { setNameError("행사 이름을 1~80자로 입력해 주세요."); return; }
+    if (name === event.name) { setEditingName(false); return; }
+    setNameSaving(true); setNameError("");
+    try { await onRename(name); setEditingName(false); }
+    catch { setNameError("이름을 저장하지 못했습니다. 연결과 교사 로그인을 확인한 뒤 다시 시도해 주세요."); }
+    finally { setNameSaving(false); }
+  };
   const store = useMemo(() => getGroupStore(event), [event]);
   const [groups, setGroups] = useState<GroupRecord[]>([]);
   const [selectedClass, setSelectedClass] = useState(1);
@@ -955,7 +977,15 @@ function EventDashboard({ event }: { event: LearningEvent }) {
       <ModeBanner mode={store.mode} />
       <div className="event-heading">
         <div className="event-title-row">
-          <h2 className="event-title">{event.name}</h2>
+          {editingName ? <form className="event-name-editor" onSubmit={saveName} onKeyDown={keyEvent => {
+            if (keyEvent.key === "Escape" && !nameSaving) { keyEvent.preventDefault(); setEditingName(false); setNameError(""); }
+          }}>
+            <input aria-label="행사 이름" aria-invalid={!!nameError} aria-describedby={nameError ? "event-name-error" : undefined} value={nameDraft} onChange={e => setNameDraft(e.target.value)} maxLength={80} required autoFocus disabled={nameSaving} />
+            <button className="icon-button event-refresh" type="submit" aria-label="행사 이름 저장" title="저장" disabled={nameSaving}>{nameSaving ? <Loader2 className="spin" size={18} /> : <Check size={18} />}</button>
+            <button className="icon-button event-refresh" type="button" aria-label="행사 이름 수정 취소" title="취소" disabled={nameSaving} onClick={() => { setEditingName(false); setNameError(""); }}><X size={18} /></button>
+          </form> : <h2 className={classNames("event-title", !event.isExample && "editable-event-title")} onDoubleClick={beginRename} tabIndex={event.isExample ? undefined : 0} title={event.isExample ? undefined : "두 번 클릭하여 이름 수정"} onKeyDown={keyEvent => {
+            if (!event.isExample && (keyEvent.key === "Enter" || keyEvent.key === "F2")) { keyEvent.preventDefault(); beginRename(); }
+          }}>{event.name}</h2>}
           <button className="icon-button event-refresh" type="button" onClick={loadGroups} aria-label="새로고침" title="새로고침" disabled={loading}>
             {loading ? <Loader2 className="spin" size={18} /> : <RefreshCw size={18} />}
           </button>
@@ -969,6 +999,7 @@ function EventDashboard({ event }: { event: LearningEvent }) {
         <EventActionsMenu onDownload={downloadCsv} onReset={event.isExample ? undefined : resetDatabase} loading={loading} />
         </div>
       </div>
+      {nameError && <div className="notice" role="alert" id="event-name-error">{nameError}</div>}
       {event.isExample && <span className="readonly-badge">보기 전용 예시</span>}
       {adminNotice && <div className="notice" role="status">{adminNotice}</div>}
       <TeacherLocationMap event={event} />

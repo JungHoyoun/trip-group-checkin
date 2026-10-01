@@ -66,7 +66,7 @@ service cloud.firestore {
       allow create: if locationTeacher() && validEvent(request.resource.data, eventId);
       allow update: if locationTeacher() && resource.data.isExample == false
         && resource.data.get("deletedAt", null) == null
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['classGroupCounts', 'defaultGroupCount'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'classGroupCounts', 'defaultGroupCount'])
         && validEvent(request.resource.data, eventId);
       allow update: if locationTeacher() && resource.data.isExample == false
         && resource.data.get("deletedAt", null) == null
@@ -77,21 +77,7 @@ service cloud.firestore {
         allow get: if request.auth != null && writableEvent(eventId);
         allow list: if false;
         allow create, update: if locationTeacher() && writableEvent(eventId)
-          && inviteId.matches('^[a-f0-9]{32}
-        allow read: if exists(/databases/$(database)/documents/events/$(eventId))
-          && get(/databases/$(database)/documents/events/$(eventId)).data.get("deletedAt", null) == null;
-        allow create, update: if writableEvent(eventId) && validGroup(eventId, groupId, request.resource.data);
-        allow delete: if locationTeacher() && writableEvent(eventId);
-      }
-    }
-    // Retain the legacy source for review, but stop obsolete clients changing it after cutover.
-    match /groups/{groupId} {
-      allow read: if true;
-      allow write: if false;
-    }
-  }
-}
-)
+          && inviteId.matches('^[a-f0-9]{32}$')
           && request.resource.data.keys().hasOnly(['classNo', 'groupNo', 'active'])
           && request.resource.data.active is bool
           && validGroup(eventId, string(request.resource.data.classNo) + '-' + string(request.resource.data.groupNo), {
@@ -130,7 +116,7 @@ service cloud.firestore {
         allow read: if exists(/databases/$(database)/documents/events/$(eventId))
           && get(/databases/$(database)/documents/events/$(eventId)).data.get("deletedAt", null) == null;
         allow create, update: if writableEvent(eventId) && validGroup(eventId, groupId, request.resource.data);
-        allow delete: if writableEvent(eventId);
+        allow delete: if locationTeacher() && writableEvent(eventId);
       }
     }
     // Retain the legacy source for review, but stop obsolete clients changing it after cutover.

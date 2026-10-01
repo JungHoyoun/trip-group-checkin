@@ -226,6 +226,7 @@ export interface EventStore {
   createEvent(input: EventInput): Promise<LearningEvent>;
   deleteEvent(id: string): Promise<void>;
   updateEvent(id: string, input: EventInput): Promise<LearningEvent>;
+  renameEvent(id: string, name: string): Promise<LearningEvent>;
 }
 
 function readLocalEvents(): Record<string, LearningEvent> {
@@ -246,6 +247,29 @@ export function getEventStore(): EventStore {
       if (!db) { const event = readLocalEvents()[id]; return event && !event.deletedAt ? event : null; }
       const snapshot = await getDoc(doc(db, "events", id));
       return snapshot.exists() && !snapshot.data().deletedAt ? { ...snapshot.data(), id: snapshot.id } as LearningEvent : null;
+    },
+    async renameEvent(id, name) {
+      if (!validEventId(id)) throw new Error("행사를 찾을 수 없습니다.");
+      const rename = (current: LearningEvent) => {
+        if (current.deletedAt) throw new Error("삭제된 행사입니다.");
+        if (current.isExample) throw new Error("예시 체험학습은 보기 전용입니다.");
+        const validated = validateEventInput({ name, classGroupCounts: current.classGroupCounts });
+        return { ...current, name: validated.name };
+      };
+      if (db) return runTransaction(db, async transaction => {
+        const ref = doc(db, "events", id);
+        const snapshot = await transaction.get(ref);
+        if (!snapshot.exists()) throw new Error("행사를 찾을 수 없습니다.");
+        const next = rename({ ...snapshot.data(), id } as LearningEvent);
+        transaction.update(ref, { name: next.name });
+        return next;
+      });
+      const events = readLocalEvents();
+      if (!events[id]) throw new Error("행사를 찾을 수 없습니다.");
+      const next = rename(events[id]);
+      events[id] = next;
+      localStorage.setItem(LOCAL_EVENTS_KEY, JSON.stringify(events));
+      return next;
     },
     async updateEvent(id, input) {
       if (!validEventId(id)) throw new Error("행사를 찾을 수 없습니다.");
