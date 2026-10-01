@@ -11,7 +11,6 @@ import {
   Save,
   Trash2,
   Undo2,
-  X,
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
@@ -251,6 +250,15 @@ function CreateEventForm({ onCreate, initialEvent, onCancel }: { onCreate: (inpu
   const [counts, setCounts] = useState<string[]>(initialEvent?.classGroupCounts.map(String) ?? Array(5).fill("4"));
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    if (!initialEvent || !onCancel || saving) return;
+    const cancelOutside = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.target instanceof Node && !formRef.current?.contains(pointerEvent.target)) onCancel();
+    };
+    document.addEventListener("pointerdown", cancelOutside);
+    return () => document.removeEventListener("pointerdown", cancelOutside);
+  }, [initialEvent, onCancel, saving]);
   const submit = async (formEvent: FormEvent) => {
     formEvent.preventDefault(); setError("");
     try {
@@ -260,7 +268,9 @@ function CreateEventForm({ onCreate, initialEvent, onCancel }: { onCreate: (inpu
     } catch (caught) { setError(caught instanceof Error ? caught.message : "생성하지 못했습니다. 다시 시도해 주세요."); }
     finally { setSaving(false); }
   };
-  return <form className="panel event-form" onSubmit={submit}>
+  return <form className="panel event-form" ref={formRef} onSubmit={submit} onKeyDown={keyEvent => {
+    if (keyEvent.key === "Escape" && onCancel && !saving) { keyEvent.preventDefault(); onCancel(); }
+  }}>
     {!initialEvent && <label>행사 이름<input value={name} onChange={e => setName(e.target.value)} placeholder="예: 가을 체험학습" maxLength={80} required disabled={saving} /></label>}
     {initialEvent && <h3>반·모둠 설정</h3>}
     <div className="field-row">
@@ -275,7 +285,7 @@ function CreateEventForm({ onCreate, initialEvent, onCancel }: { onCreate: (inpu
     <fieldset className="class-counts" disabled={saving}><legend>반별 모둠 수</legend>{counts.map((count, index) => <label key={index}>{index + 1}반<input type="number" min={1} max={30} step={1} value={count} required onChange={e => setCounts(old => old.map((value, i) => i === index ? e.target.value : value))} /></label>)}</fieldset>
     {error && <div className="notice" role="alert">{error}</div>}
     <div className="event-toolbar"><button className="primary-button" type="submit" disabled={saving}>{saving ? "저장 중" : initialEvent ? "설정 저장" : "체험학습 만들기"}</button>
-    {onCancel && <button className="secondary-button" type="button" disabled={saving} onClick={onCancel}>취소</button>}</div>
+    </div>
   </form>;
 }
 
@@ -869,6 +879,17 @@ function EventDashboard({ event, onRename }: { event: LearningEvent; onRename: (
   const [nameDraft, setNameDraft] = useState(event.name);
   const [nameSaving, setNameSaving] = useState(false);
   const [nameError, setNameError] = useState("");
+  const nameEditorRef = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    if (!editingName || nameSaving) return;
+    const cancelOutside = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.target instanceof Node && !nameEditorRef.current?.contains(pointerEvent.target)) {
+        setEditingName(false); setNameError("");
+      }
+    };
+    document.addEventListener("pointerdown", cancelOutside);
+    return () => document.removeEventListener("pointerdown", cancelOutside);
+  }, [editingName, nameSaving]);
   const beginRename = () => {
     if (event.isExample) return;
     setNameDraft(event.name); setNameError(""); setEditingName(true);
@@ -977,12 +998,11 @@ function EventDashboard({ event, onRename }: { event: LearningEvent; onRename: (
       <ModeBanner mode={store.mode} />
       <div className="event-heading">
         <div className="event-title-row">
-          {editingName ? <form className="event-name-editor" onSubmit={saveName} onKeyDown={keyEvent => {
+          {editingName ? <form className="event-name-editor" ref={nameEditorRef} onSubmit={saveName} onKeyDown={keyEvent => {
             if (keyEvent.key === "Escape" && !nameSaving) { keyEvent.preventDefault(); setEditingName(false); setNameError(""); }
           }}>
             <input aria-label="행사 이름" aria-invalid={!!nameError} aria-describedby={nameError ? "event-name-error" : undefined} value={nameDraft} onChange={e => setNameDraft(e.target.value)} maxLength={80} required autoFocus disabled={nameSaving} />
             <button className="icon-button event-refresh" type="submit" aria-label="행사 이름 저장" title="저장" disabled={nameSaving}>{nameSaving ? <Loader2 className="spin" size={18} /> : <Check size={18} />}</button>
-            <button className="icon-button event-refresh" type="button" aria-label="행사 이름 수정 취소" title="취소" disabled={nameSaving} onClick={() => { setEditingName(false); setNameError(""); }}><X size={18} /></button>
           </form> : <h2 className={classNames("event-title", !event.isExample && "editable-event-title")} onDoubleClick={beginRename} tabIndex={event.isExample ? undefined : 0} title={event.isExample ? undefined : "두 번 클릭하여 이름 수정"} onKeyDown={keyEvent => {
             if (!event.isExample && (keyEvent.key === "Enter" || keyEvent.key === "F2")) { keyEvent.preventDefault(); beginRename(); }
           }}>{event.name}</h2>}
