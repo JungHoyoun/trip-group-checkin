@@ -1,18 +1,11 @@
 import type {
   CourseInputPlace,
   CoursePlace,
-  DelayState,
   GroupAction,
   GroupRecord,
   GroupStatus,
   HistoryEntry,
-  RequiredCheckpoint,
 } from "../types";
-import { FINAL_PLACE, FIRST_PLACE, REQUIRED_CHECKPOINTS } from "./constants";
-
-const START_PLACE_ID = "fixed-start-1000";
-const GATHERING_PLACE_ID = "fixed-asia-culture-center-1400";
-const FINAL_PLACE_ID = "fixed-concert-hall-1830";
 
 export function getGroupId(classNo: number, groupNo: number) {
   return `${classNo}-${groupNo}`;
@@ -37,66 +30,23 @@ export function createEmptyCourseInputPlace(): CourseInputPlace {
   };
 }
 
-export function cleanMiddlePlaces(places: CourseInputPlace[]) {
-  const requiredNames = new Set([FIRST_PLACE, FINAL_PLACE]);
+export function createCourse(places: CourseInputPlace[]): CoursePlace[] {
   return places
-    .map((place) => ({
-      placeId: place.placeId || createPlaceId(),
-      name: place.name.trim(),
-    }))
+    .map((place) => ({ placeId: place.placeId || createPlaceId(), name: place.name.trim() }))
     .filter((place) => place.name)
-    .filter((place) => !requiredNames.has(place.name));
-}
-
-export function createCourse(beforeGatheringPlaces: CourseInputPlace[], afterGatheringPlaces: CourseInputPlace[]): CoursePlace[] {
-  const places = [
-    {
-      placeId: START_PLACE_ID,
-      name: FIRST_PLACE,
-      scheduledTime: "10:00",
-      requiredCheckpoint: null,
-    },
-    ...cleanMiddlePlaces(beforeGatheringPlaces).map((place) => ({
-      placeId: place.placeId,
-      name: place.name,
+    .map((place, index) => ({
+      ...place,
+      order: index + 1,
       scheduledTime: null,
       requiredCheckpoint: null,
-    })),
-    {
-      placeId: GATHERING_PLACE_ID,
-      name: FIRST_PLACE,
-      scheduledTime: "14:00",
-      requiredCheckpoint: "asia_culture_center" as RequiredCheckpoint,
-    },
-    ...cleanMiddlePlaces(afterGatheringPlaces).map((place) => ({
-      placeId: place.placeId,
-      name: place.name,
-      scheduledTime: null,
-      requiredCheckpoint: null,
-    })),
-    {
-      placeId: FINAL_PLACE_ID,
-      name: FINAL_PLACE,
-      scheduledTime: "18:30",
-      requiredCheckpoint: "concert_hall" as RequiredCheckpoint,
-    },
-  ];
-
-  return places.map((place, index) => ({
-    placeId: place.placeId,
-    order: index + 1,
-    name: place.name,
-    scheduledTime: place.scheduledTime,
-    requiredCheckpoint: place.requiredCheckpoint,
-  }));
+    }));
 }
 
 export function createInitialGroup(params: {
   classNo: number;
   groupNo: number;
   leaderName: string;
-  beforeGatheringPlaces: CourseInputPlace[];
-  afterGatheringPlaces: CourseInputPlace[];
+  places: CourseInputPlace[];
 }): GroupRecord {
   const now = new Date().toISOString();
 
@@ -105,7 +55,7 @@ export function createInitialGroup(params: {
     classNo: params.classNo,
     groupNo: params.groupNo,
     leaderName: params.leaderName.trim(),
-    course: createCourse(params.beforeGatheringPlaces, params.afterGatheringPlaces),
+    course: createCourse(params.places),
     status: "ready",
     currentIndex: 0,
     history: [],
@@ -118,11 +68,10 @@ export function createInitialGroup(params: {
 export function updateGroupCourse(
   group: GroupRecord,
   courseInput: {
-    beforeGatheringPlaces: CourseInputPlace[];
-    afterGatheringPlaces: CourseInputPlace[];
+    places: CourseInputPlace[];
   },
 ): GroupRecord {
-  const nextCourse = createCourse(courseInput.beforeGatheringPlaces, courseInput.afterGatheringPlaces);
+  const nextCourse = createCourse(courseInput.places);
   const nextHistory = group.history.map((entry) => {
     const matchedIndex = nextCourse.findIndex((place) => place.placeId === entry.placeId);
     const fallbackIndex = nextCourse.findIndex((place) => place.name === entry.placeName);
@@ -147,21 +96,7 @@ export function updateGroupCourse(
 }
 
 export function getEditablePlacesFromCourse(course: CoursePlace[]) {
-  const gatheringIndex = course.findIndex((place) => place.requiredCheckpoint === "asia_culture_center");
-  const finalIndex = course.findIndex((place) => place.requiredCheckpoint === "concert_hall");
-  const beforeGatheringPlaces = course
-    .slice(1, gatheringIndex === -1 ? 1 : gatheringIndex)
-    .filter((place) => !place.requiredCheckpoint)
-    .map((place) => ({ placeId: place.placeId, name: place.name }));
-  const afterGatheringPlaces = course
-    .slice(gatheringIndex === -1 ? 1 : gatheringIndex + 1, finalIndex === -1 ? course.length : finalIndex)
-    .filter((place) => !place.requiredCheckpoint)
-    .map((place) => ({ placeId: place.placeId, name: place.name }));
-
-  return {
-    beforeGatheringPlaces: beforeGatheringPlaces.length > 0 ? beforeGatheringPlaces : [createEmptyCourseInputPlace()],
-    afterGatheringPlaces: afterGatheringPlaces.length > 0 ? afterGatheringPlaces : [createEmptyCourseInputPlace()],
-  };
+  return course.map((place) => ({ placeId: place.placeId, name: place.name }));
 }
 
 function deriveProgress(course: CoursePlace[], history: HistoryEntry[]) {
@@ -184,22 +119,13 @@ function deriveProgress(course: CoursePlace[], history: HistoryEntry[]) {
 }
 
 export function reconcileGroupProgress(group: GroupRecord): GroupRecord {
-  const course = group.course.map((place, index) => ({
+  const course = group.course.map((place) => ({
     ...place,
-    placeId:
-      place.placeId ||
-      (index === 0
-        ? START_PLACE_ID
-        : place.requiredCheckpoint === "asia_culture_center"
-          ? GATHERING_PLACE_ID
-          : place.requiredCheckpoint === "concert_hall"
-            ? FINAL_PLACE_ID
-            : createPlaceId()),
+    placeId: place.placeId || createPlaceId(),
+    scheduledTime: null,
+    requiredCheckpoint: null,
   }));
-  const startsAtAsiaCultureCenter = group.course[0]?.requiredCheckpoint === "asia_culture_center";
-  const history = startsAtAsiaCultureCenter
-    ? group.history.filter((entry) => entry.placeIndex !== 0)
-    : [...group.history];
+  const history = [...group.history];
   const historyWithPlaceIds = history.map((entry) => ({
     ...entry,
     placeId: entry.placeId ?? course[entry.placeIndex]?.placeId ?? null,
@@ -340,56 +266,6 @@ export function getNextPlaceName(group: GroupRecord) {
   }
 
   return group.course[group.currentIndex + 1]?.name ?? null;
-}
-
-function getKoreaDateParts(date: Date) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(date);
-
-  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "";
-  return {
-    year: part("year"),
-    month: part("month"),
-    day: part("day"),
-  };
-}
-
-export function koreaTodayAt(time: string, baseDate = new Date()) {
-  const { year, month, day } = getKoreaDateParts(baseDate);
-  return new Date(`${year}-${month}-${day}T${time}:00+09:00`);
-}
-
-function hasArrivedCheckpoint(group: GroupRecord, checkpoint: RequiredCheckpoint) {
-  const checkpointIndex = group.course.findIndex((place) => place.requiredCheckpoint === checkpoint);
-
-  if (checkpointIndex === 0) {
-    return true;
-  }
-
-  return group.history.some((entry) => {
-    const coursePlace = group.course[entry.placeIndex];
-    return entry.type === "arrive" && coursePlace?.requiredCheckpoint === checkpoint;
-  });
-}
-
-export function getDelayState(group: GroupRecord | null, now = new Date()): DelayState {
-  if (!group) {
-    return { isDelayed: false, labels: [] };
-  }
-
-  const delayedLabels = REQUIRED_CHECKPOINTS.filter((checkpoint) => {
-    const deadline = koreaTodayAt(checkpoint.deadline, now);
-    return now.getTime() > deadline.getTime() && !hasArrivedCheckpoint(group, checkpoint.checkpoint);
-  }).map((checkpoint) => checkpoint.label);
-
-  return {
-    isDelayed: delayedLabels.length > 0,
-    labels: delayedLabels,
-  };
 }
 
 export function formatTime(value: string | null | undefined) {

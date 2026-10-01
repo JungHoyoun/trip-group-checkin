@@ -26,8 +26,7 @@ export interface GroupStore {
   updateCourse(
     id: string,
     courseInput: {
-      beforeGatheringPlaces: CourseInputPlace[];
-      afterGatheringPlaces: CourseInputPlace[];
+      places: CourseInputPlace[];
     },
   ): Promise<GroupRecord | null>;
   applyAction(action: GroupAction): Promise<GroupRecord | null>;

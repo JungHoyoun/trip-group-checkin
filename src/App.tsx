@@ -22,7 +22,6 @@ import {
   createInitialGroup,
   formatTime,
   getCurrentPlaceName,
-  getDelayState,
   getEditablePlacesFromCourse,
   getGroupId,
   getNextAction,
@@ -252,7 +251,7 @@ function StudentPage() {
     setNotice("");
   };
 
-  const handleSaveCourse = async (courseInput: { beforeGatheringPlaces: CourseInputPlace[]; afterGatheringPlaces: CourseInputPlace[] }) => {
+  const handleSaveCourse = async (courseInput: { places: CourseInputPlace[] }) => {
     if (!session) {
       return;
     }
@@ -458,27 +457,22 @@ function CourseEditor({
 }: {
   session: StudentSession;
   existingGroup?: GroupRecord | null;
-  onSave: (courseInput: { beforeGatheringPlaces: CourseInputPlace[]; afterGatheringPlaces: CourseInputPlace[] }) => Promise<void>;
+  onSave: (courseInput: { places: CourseInputPlace[] }) => Promise<void>;
   onCancel?: () => void;
 }) {
   const existingPlaces = useMemo(
     () => (existingGroup ? getEditablePlacesFromCourse(existingGroup.course) : null),
     [existingGroup],
   );
-  const [beforeGatheringPlaces, setBeforeGatheringPlaces] = useState<CourseInputPlace[]>(
-    () => existingPlaces?.beforeGatheringPlaces ?? [createEmptyCourseInputPlace()],
-  );
-  const [afterGatheringPlaces, setAfterGatheringPlaces] = useState<CourseInputPlace[]>(
-    () => existingPlaces?.afterGatheringPlaces ?? [createEmptyCourseInputPlace()],
+  const [places, setPlaces] = useState<CourseInputPlace[]>(
+    () => existingPlaces ?? [createEmptyCourseInputPlace(), createEmptyCourseInputPlace()],
   );
   const [saving, setSaving] = useState(false);
   const [courseNotice, setCourseNotice] = useState("");
   const activePlace = existingGroup && existingGroup.status !== "ready"
     ? existingGroup.course[existingGroup.currentIndex]
     : null;
-  const activeEditablePlaceId = activePlace && !activePlace.scheduledTime && !activePlace.requiredCheckpoint
-    ? activePlace.placeId
-    : null;
+  const activeEditablePlaceId = activePlace?.placeId ?? null;
 
   const updatePlace = (
     setter: Dispatch<SetStateAction<CourseInputPlace[]>>,
@@ -495,7 +489,11 @@ function CourseEditor({
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    const editablePlaces = [...beforeGatheringPlaces, ...afterGatheringPlaces];
+    const editablePlaces = places;
+    if (places.filter((place) => place.name.trim()).length < 2) {
+      setCourseNotice("출발 장소와 도착 장소를 포함해 두 곳 이상 입력해 주세요.");
+      return;
+    }
 
     if (activeEditablePlaceId && !editablePlaces.some((place) => place.placeId === activeEditablePlaceId && place.name.trim())) {
       setCourseNotice("현재 진행 중인 장소는 비우거나 삭제할 수 없습니다.");
@@ -504,10 +502,7 @@ function CourseEditor({
 
     setSaving(true);
     setCourseNotice("");
-    await onSave({
-      beforeGatheringPlaces,
-      afterGatheringPlaces,
-    });
+    await onSave({ places });
     setSaving(false);
   };
 
@@ -552,32 +547,14 @@ function CourseEditor({
 
       {courseNotice && <div className="notice">{courseNotice}</div>}
 
+      <p className="muted">첫 번째 장소는 출발지입니다. 방문할 장소를 순서대로 입력해 주세요.</p>
       <ol className="course-list editor">
-        <li className="fixed-place">
-          <span className="time-chip">10:00</span>
-          아시아 문화전당
-        </li>
-        {renderEditablePlaces(beforeGatheringPlaces, setBeforeGatheringPlaces, "오전 중간 장소")}
+        {renderEditablePlaces(places, setPlaces, "장소 이름")}
         <li className="control-row">
-          <button className="secondary-button add-place-button" type="button" onClick={() => addPlace(setBeforeGatheringPlaces)}>
+          <button className="secondary-button add-place-button" type="button" onClick={() => addPlace(setPlaces)}>
             <Plus size={18} />
-            10:00~14:00 장소 추가
+            장소 추가
           </button>
-        </li>
-        <li className="fixed-place">
-          <span className="time-chip">14:00</span>
-          아시아 문화전당
-        </li>
-        {renderEditablePlaces(afterGatheringPlaces, setAfterGatheringPlaces, "오후 중간 장소")}
-        <li className="control-row">
-          <button className="secondary-button add-place-button" type="button" onClick={() => addPlace(setAfterGatheringPlaces)}>
-            <Plus size={18} />
-            14:00~18:30 장소 추가
-          </button>
-        </li>
-        <li className="fixed-place">
-          <span className="time-chip">18:30</span>
-          공연장
         </li>
       </ol>
 
@@ -908,7 +885,6 @@ function GroupCard({
   selected: boolean;
   onClick: () => void;
 }) {
-  const delay = getDelayState(group);
   const status = group ? STATUS_LABELS[group.status] : "미입력";
 
   return (
@@ -918,7 +894,6 @@ function GroupCard({
         !group && "empty",
         group?.status === "moving" && "moving",
         group?.status === "watching" && "watching",
-        delay.isDelayed && "delayed",
         selected && "selected",
       )}
       type="button"
@@ -926,7 +901,7 @@ function GroupCard({
     >
       <div className="card-head">
         <strong>{classNo}반 {groupNo}모둠</strong>
-        <span>{delay.isDelayed ? "지연" : status}</span>
+        <span>{status}</span>
       </div>
       <p>{group?.leaderName ?? "모둠장 미입력"}</p>
       <dl>
@@ -944,7 +919,6 @@ function GroupCard({
         </div>
       </dl>
       {group && <CoursePreview group={group} compact />}
-      {delay.isDelayed && <small>{delay.labels.join(", ")}</small>}
     </button>
   );
 }
