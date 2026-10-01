@@ -59,3 +59,11 @@ export function watchLocations(eventId: string, next: (locations: SharedLocation
     next(snapshot.docs.map(item => item.data() as SharedLocation));
   }, error);
 }
+
+export function watchLocation(eventId: string, groupId: string, next: (location: SharedLocation | null) => void, error: () => void) {
+  const db = getDb();
+  if (!db) throw new Error("Firebase 설정이 필요합니다.");
+  return onSnapshot(doc(db, "events", eventId, "locations", groupId), snapshot => {
+    next(snapshot.exists() ? snapshot.data() as SharedLocation : null);
+  }, error);
+}

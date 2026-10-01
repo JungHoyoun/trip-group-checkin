@@ -1022,7 +1022,6 @@ function EventDashboard({ event, onRename }: { event: LearningEvent; onRename: (
       {nameError && <div className="notice" role="alert" id="event-name-error">{nameError}</div>}
       {event.isExample && <span className="readonly-badge">보기 전용 예시</span>}
       {adminNotice && <div className="notice" role="status">{adminNotice}</div>}
-      <TeacherLocationMap event={event} />
 
       <div className="admin-actions">
         <div className="tabs" role="tablist" aria-label="학급">
@@ -1060,12 +1059,13 @@ function EventDashboard({ event, onRename }: { event: LearningEvent; onRename: (
         })}
       </section>
 
-      {selectedGroup && (
+      {selectedGroupId && (
         <section className="detail-panel">
           <div>
-            <p className="eyebrow">{selectedGroup.classNo}반 {selectedGroup.groupNo}모둠</p>
-            <h2>{selectedGroup.leaderName}</h2>
+            <p className="eyebrow">{selectedGroupId.split("-")[0]}반 {selectedGroupId.split("-")[1]}모둠</p>
+            <h2>{selectedGroup?.leaderName || "모둠장 미입력"}</h2>
           </div>
+          {selectedGroup ? <>
           <div className="detail-grid">
             <span>현재</span>
             <strong>{STATUS_LABELS[selectedGroup.status]} · {getCurrentPlaceName(selectedGroup)}</strong>
@@ -1079,6 +1079,8 @@ function EventDashboard({ event, onRename }: { event: LearningEvent; onRename: (
             <CoursePreview group={selectedGroup} />
           </div>
           <HistoryList group={selectedGroup} />
+          </> : <p className="muted">아직 입력된 일정과 기록이 없습니다.</p>}
+          <TeacherLocationMap key={`${event.id}-${selectedGroupId}`} event={event} classNo={Number(selectedGroupId.split("-")[0])} groupNo={Number(selectedGroupId.split("-")[1])} />
         </section>
       )}
     </main>
