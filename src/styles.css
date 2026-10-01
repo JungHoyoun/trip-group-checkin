@@ -653,6 +653,18 @@ button:focus-visible {
   .event-heading .event-title { font-size: 28px; }
 }
 
+
+.event-actions-menu { position: relative; }
+.event-actions-menu > summary { list-style: none; cursor: pointer; color: #475569; background: transparent; border-color: transparent; }
+.event-actions-menu > summary::-webkit-details-marker { display: none; }
+.event-actions-menu > summary span { font-size: 26px; line-height: 1; }
+.event-actions-menu > summary:hover, .event-actions-menu[open] > summary { background: #edf2f7; }
+.event-actions-menu > summary:focus-visible { outline: 2px solid #64748b; outline-offset: 2px; }
+.event-actions-popover { position: absolute; right: 0; top: calc(100% + 6px); z-index: 10; min-width: 170px; padding: 6px; border: 1px solid #dce3ee; border-radius: 10px; background: #fff; box-shadow: 0 8px 24px #1720331a; }
+.event-actions-popover button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 0 12px; border: 0; border-radius: 6px; color: #334155; background: transparent; text-align: left; white-space: nowrap; }
+.event-actions-popover button:hover:not(:disabled) { background: #edf2f7; }
+.event-actions-popover .reset-menu-item { color: #a21f2d; }
+
 .app-title-link { color: inherit; text-decoration: none; }
 .app-title-link:hover { color: #475569; }
 .app-title-link:focus-visible { outline: 2px solid #64748b; outline-offset: 4px; border-radius: 3px; }

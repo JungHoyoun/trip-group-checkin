@@ -12,7 +12,7 @@ import {
   Trash2,
   Undo2,
 } from "lucide-react";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { CourseInputPlace, GroupAction, GroupRecord, LearningEvent, EventInput } from "./types";
 import { APP_NAME, STATUS_LABELS } from "./lib/constants";
@@ -828,6 +828,33 @@ function HistoryList({ group }: { group: GroupRecord }) {
   );
 }
 
+function EventActionsMenu({ onDownload, onReset, loading }: { onDownload: () => void; onReset?: () => Promise<void>; loading: boolean }) {
+  const menuRef = useRef<HTMLDetailsElement>(null);
+  const closeMenu = (restoreFocus = false) => {
+    if (!menuRef.current) return;
+    menuRef.current.open = false;
+    if (restoreFocus) menuRef.current.querySelector("summary")?.focus();
+  };
+  useEffect(() => {
+    const closeOutside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !menuRef.current?.contains(event.target)) closeMenu();
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    return () => document.removeEventListener("pointerdown", closeOutside);
+  }, []);
+  return <details className="event-actions-menu" ref={menuRef} onKeyDown={event => {
+    if (event.key === "Escape") { event.preventDefault(); closeMenu(true); }
+  }} onBlur={event => {
+    if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget)) closeMenu();
+  }}>
+    <summary className="icon-button" aria-label="행사 추가 작업" title="추가 작업"><span aria-hidden="true">⋯</span></summary>
+    <div className="event-actions-popover">
+      <button type="button" onClick={() => { closeMenu(true); onDownload(); }}><Download size={18} />CSV 다운로드</button>
+      {onReset && <button type="button" className="reset-menu-item" disabled={loading} onClick={() => { closeMenu(true); void onReset(); }}><Trash2 size={18} />초기화</button>}
+    </div>
+  </details>;
+}
+
 function EventDashboard({ event }: { event: LearningEvent }) {
   const store = useMemo(() => getGroupStore(event), [event]);
   const [groups, setGroups] = useState<GroupRecord[]>([]);
@@ -931,14 +958,7 @@ function EventDashboard({ event }: { event: LearningEvent }) {
           try { await navigator.clipboard.writeText(`${window.location.origin}/?event=${encodeURIComponent(event.id)}`); setAdminNotice("학생용 링크를 복사했습니다."); }
           catch { setAdminNotice(`학생용 링크: ${window.location.origin}/?event=${encodeURIComponent(event.id)}`); }
         }}>학생용 링크 복사</button>}
-        {!event.isExample && <button className="danger-button" type="button" disabled={loading} onClick={resetDatabase}>
-          <Trash2 size={18} />
-          초기화
-        </button>}
-        <button className="secondary-button" type="button" onClick={downloadCsv}>
-          <Download size={18} />
-          CSV
-        </button>
+        <EventActionsMenu onDownload={downloadCsv} onReset={event.isExample ? undefined : resetDatabase} loading={loading} />
         </div>
       </div>
       {event.isExample && <span className="readonly-badge">보기 전용 예시</span>}
