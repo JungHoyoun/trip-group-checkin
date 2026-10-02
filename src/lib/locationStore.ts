@@ -72,7 +72,9 @@ export function watchLocationDevice(eventId: string, groupId: string, next: (bin
 export function watchLocation(eventId: string, groupId: string, next: (location: SharedLocation | null) => void, error: () => void) {
   const db = getDb();
   if (!db) throw new Error("Firebase 설정이 필요합니다.");
-  return onSnapshot(doc(db, "events", eventId, "locations", groupId), snapshot => {
+  return onSnapshot(doc(db, "events", eventId, "locations", groupId), { includeMetadataChanges: true }, snapshot => {
+    // An empty local cache is not evidence that the server has no location.
+    if (!snapshot.exists() && snapshot.metadata.fromCache) return;
     next(snapshot.exists() ? snapshot.data() as SharedLocation : null);
   }, error);
 }

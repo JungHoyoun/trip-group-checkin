@@ -1080,7 +1080,7 @@ function EventDashboard({ event, onRename }: { event: LearningEvent; onRename: (
           </div>
           <HistoryList group={selectedGroup} />
           </> : <p className="muted">아직 입력된 일정과 기록이 없습니다.</p>}
-          <TeacherLocationMap key={`${event.id}-${selectedGroupId}`} event={event} classNo={Number(selectedGroupId.split("-")[0])} groupNo={Number(selectedGroupId.split("-")[1])} />
+          <TeacherLocationMap event={event} classNo={Number(selectedGroupId.split("-")[0])} groupNo={Number(selectedGroupId.split("-")[1])} />
         </section>
       )}
     </main>
